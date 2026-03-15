@@ -1,0 +1,11 @@
+services:
+  moetcha:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/packs:/app/data/packs:ro
+    environment:
+      - GIN_MODE=release
