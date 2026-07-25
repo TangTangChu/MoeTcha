@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"moetcha/core"
 	"moetcha/core/render"
@@ -29,8 +28,35 @@ func main() {
 	}
 
 	engine := core.NewEngine(indexer)
-	sessionStore := core.NewMemorySessionStore()
-	assetStore := core.NewMemoryAssetStore()
+
+	config, err := core.LoadConfig()
+	if err != nil {
+		log.Fatalf("配置加载失败：%v", err)
+	}
+	if err := core.ValidateConfig(config); err != nil {
+		log.Fatalf("配置校验失败：%v", err)
+	}
+
+	var sessionStore core.SessionStore
+	var assetStore core.AssetStore
+	var sqliteStore *core.SQLiteSessionStore
+
+	switch config.Storage.Backend {
+	case "sqlite":
+		ss, err := core.NewSQLiteSessionStore(config.SQLitePath)
+		if err != nil {
+			log.Fatalf("SQLite 初始化失败：%v", err)
+		}
+		sqliteStore = ss
+		sessionStore = ss
+		assetStore = core.NewSQLiteAssetStore(ss.DB())
+		fmt.Printf("存储后端：SQLite (%s)\n", config.SQLitePath)
+	default:
+		sessionStore = core.NewMemorySessionStore()
+		assetStore = core.NewMemoryAssetStore()
+		fmt.Println("存储后端：内存")
+	}
+
 	renderer := &core.Renderer{
 		Pipeline: render.NewPipeline(render.NoiseObfuscator{Density: 0.02}),
 	}
@@ -39,12 +65,17 @@ func main() {
 		SessionStore: sessionStore,
 		AssetStore:   assetStore,
 		Renderer:     renderer,
-		TTL:          2 * time.Minute,
-		MaxAttempts:  3,
+		TTL:          config.Service.TTL,
+		MaxAttempts:  config.Service.MaxAttempts,
+		IPPolicy:     config.Service.IPPolicy,
+		Secure:       config.Service.Secure,
 	}
 
 	router := httptransport.NewRouter(service, assetStore)
-	if err := router.Engine.Run(":8080"); err != nil {
+	if err := router.Engine.Run(":" + config.HTTPPort); err != nil {
+		if sqliteStore != nil {
+			sqliteStore.Close()
+		}
 		log.Fatalf("HTTP 服务启动失败: %v", err)
 	}
 }

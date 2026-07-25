@@ -1,8 +1,6 @@
 package core
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -63,13 +61,3 @@ func (s *MemoryAssetStore) Delete(key string) error {
 	return nil
 }
 
-func randomKey(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(b)
-}

@@ -14,7 +14,11 @@ type Router struct {
 }
 
 func NewRouter(service *core.Service, assets core.AssetStore) *Router {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(RequestIDMiddleware())
+	r.Use(LoggingMiddleware())
+
 	router := &Router{Engine: r, Service: service, Assets: assets}
 	router.registerRoutes()
 	return router
@@ -30,5 +34,8 @@ func (r *Router) registerRoutes() {
 			"text":   "Ciallo～(∠・ω< )⌒★",
 			"method": c.Request.Method,
 		})
+	})
+	r.Engine.GET("/metrics", func(c *gin.Context) {
+		c.JSON(http.StatusOK, core.MetricsInstance.Snapshot())
 	})
 }

@@ -21,7 +21,8 @@ func (r *Router) handleChallenge(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 
 	kind := core.ChallengeType(req.Type)
-	resp, err := r.Service.NewChallenge(kind)
+	ctx := core.VerifyContext{IP: clientIP(c), UserAgent: c.GetHeader("User-Agent")}
+	resp, err := r.Service.NewChallenge(kind, ctx)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

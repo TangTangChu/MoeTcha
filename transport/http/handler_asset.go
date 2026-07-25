@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"moetcha/core"
 	"moetcha/core/render"
 )
 
@@ -25,5 +26,6 @@ func (r *Router) handleAsset(c *gin.Context) {
 		return
 	}
 
+	core.MetricsInstance.AssetsServed.Add(1)
 	c.Data(http.StatusOK, render.ContentType(), asset.Bytes)
 }

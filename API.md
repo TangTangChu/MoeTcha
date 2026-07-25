@@ -11,6 +11,7 @@
 ## GET /challenge
 
 用途：获取验证码题目。可选查询参数 type，值为 grid 或 click，不传则随机。
+注意：当启用 IP/UA 绑定策略或 Token 签名策略时，需要客户端请求带上稳定的 IP 与 User-Agent。
 
 示例请求
 
@@ -30,24 +31,26 @@ curl "http://localhost:8080/challenge"
       {"image_id": "animals:cat_01", "asset_key": "a1b2c3d4"},
       {"image_id": "animals:dog_02", "asset_key": "e5f6g7h8"}
     ]
-  }
+  },
+  "token": "<signed-token>"
 }
 ```
 
 ## POST /verify
 
-用途：提交答案进行校验。请求体包含 session_id，type 以及 grid 或 click 对象。grid 提交 image_ids 数组，click 提交 points 数组，points 内含 x 与 y。
+用途：提交答案进行校验。请求体包含 session_id、token、type 以及 grid 或 click 对象。grid 提交 image_ids 数组，click 提交 points 数组，points 内含 x 与 y。
+注意：当启用 IP/UA 绑定策略或 Token 签名策略时，需要与获取 challenge 时的 IP 与 User-Agent 一致，否则会被拒绝；Token 签名开启后需提交 token 字段。
 
 示例请求 grid
 
 ```bash
-curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" -d '{"session_id":"2f0c8e1b9a9c4e1f1a3b2c4d5e6f7788","type":"grid","grid":{"image_ids":["animals:cat_01","animals:cat_03"]}}'
+curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" -d '{"session_id":"2f0c8e1b9a9c4e1f1a3b2c4d5e6f7788","token":"<signed-token>","type":"grid","grid":{"image_ids":["animals:cat_01","animals:cat_03"]}}'
 ```
 
 示例请求 click
 
 ```bash
-curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" -d '{"session_id":"2f0c8e1b9a9c4e1f1a3b2c4d5e6f7788","type":"click","click":{"points":[{"x":120,"y":220},{"x":300,"y":260}]}}'
+curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" -d '{"session_id":"2f0c8e1b9a9c4e1f1a3b2c4d5e6f7788","token":"<signed-token>","type":"click","click":{"points":[{"x":120,"y":220},{"x":300,"y":260}]}}'
 ```
 
 示例响应

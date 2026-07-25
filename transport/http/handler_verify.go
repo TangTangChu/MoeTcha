@@ -10,6 +10,7 @@ import (
 type verifyRequest struct {
 	SessionID string                   `json:"session_id"`
 	Type      string                   `json:"type"`
+	Token     string                   `json:"token"`
 	Grid      *core.GridVerifyRequest  `json:"grid,omitempty"`
 	Click     *core.ClickVerifyRequest `json:"click,omitempty"`
 }
@@ -26,7 +27,8 @@ func (r *Router) handleVerify(c *gin.Context) {
 		return
 	}
 
-	result, err := r.Service.Verify(req.SessionID, req.Grid, req.Click)
+	ctx := core.VerifyContext{IP: clientIP(c), UserAgent: c.GetHeader("User-Agent"), Token: req.Token}
+	result, err := r.Service.Verify(req.SessionID, req.Grid, req.Click, ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

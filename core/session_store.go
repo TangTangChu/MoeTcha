@@ -9,6 +9,8 @@ type ChallengeSession struct {
 	ExpiresAt   time.Time
 	Attempts    int
 	MaxAttempts int
+	IP          string
+	UserAgent   string
 }
 
 type SessionStore interface {
