@@ -1,0 +1,77 @@
+# Local environment and machine-specific settings
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Runtime data and generated artifacts
+/artifacts/
+/tmp/
+/temp/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.log
+*.pid
+
+# Go build and test output
+*.exe
+*.test
+*.out
+coverage.*
+/MoeTcha
+/moetcha
+
+# .NET / Visual Studio build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+.vs/
+[Tt]est[Rr]esult*/
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+*.binlog
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet, publishing, and packaging output
+packages/
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+project.lock.json
+AppPackages/
+BundleArtifacts/
+publish/
+Properties/PublishProfiles/
+*.pubxml
+*.pubxml.user
+*.msix
+*.msixupload
+*.appx
+*.appxbundle
+*.appxupload
+
+# IDE, analysis, and generated files
+.idea/
+_ReSharper*/
+*.DotSettings.user
+*.dotCover
+Generated Files/
+*_wpftmp.csproj
+
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

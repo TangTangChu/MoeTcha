@@ -6,6 +6,10 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
+	"path/filepath"
+	"strings"
+
+	genwebp "github.com/gen2brain/webp"
 )
 
 func LoadImage(path string) (image.Image, error) {
@@ -18,7 +22,12 @@ func LoadImage(path string) (image.Image, error) {
 	}
 	defer f.Close()
 
-	img, _, err := image.Decode(f)
+	var img image.Image
+	if strings.EqualFold(filepath.Ext(path), ".webp") {
+		img, err = genwebp.Decode(f)
+	} else {
+		img, _, err = image.Decode(f)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("解码图片失败: %w", err)
 	}

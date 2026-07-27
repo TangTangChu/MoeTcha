@@ -27,6 +27,7 @@ func NewRouter(service *core.Service, assets core.AssetStore) *Router {
 func (r *Router) registerRoutes() {
 	r.Engine.GET("/challenge", r.handleChallenge)
 	r.Engine.POST("/verify", r.handleVerify)
+	r.Engine.POST("/grid/generate", r.handleGridGenerate)
 	r.Engine.GET("/asset/:key", r.handleAsset)
 	r.Engine.Any("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"image"
 	"log/slog"
 	"time"
 
@@ -15,6 +16,7 @@ type Service struct {
 	Renderer     *Renderer
 	TTL          time.Duration
 	MaxAttempts  int
+	Difficulty   Difficulty
 	IPPolicy     IPPolicy
 	Secure       SecurePolicy
 }
@@ -96,17 +98,11 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 	if s.Engine == nil || s.SessionStore == nil || s.AssetStore == nil || s.Renderer == nil {
 		return nil, fmt.Errorf("service 组件未初始化")
 	}
-	if s.Secure.RateLimit.Enabled {
-		if limiter, ok := s.SessionStore.(RateLimiter); ok {
-			if !limiter.Allow(ctx, s.Secure.RateLimit) {
-				if !s.Secure.RateLimit.SoftReject {
-					return nil, fmt.Errorf("访问过于频繁")
-				}
-			}
-		}
+	if err := s.checkRateLimit(ctx); err != nil {
+		return nil, err
 	}
 
-	chal, err := s.Engine.GenerateChallenge(kind)
+	chal, err := s.Engine.GenerateChallenge(kind, s.Difficulty)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +166,128 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 	MetricsInstance.ChallengesGenerated.Add(1)
 	slog.Info("challenge_created", "session_id", sessionID, "type", chal.Type, "tag", chal.Tag)
 	return resp, nil
+}
+
+// GenerateGridImage 生成带编号的单张 Grid WebP 图片，并将其作为临时 asset 保存。
+func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyContext) (*GridImageGenerateResult, error) {
+	if s == nil || s.Engine == nil || s.AssetStore == nil {
+		return nil, fmt.Errorf("grid image service 组件未初始化")
+	}
+	if err := s.checkRateLimit(ctx); err != nil {
+		return nil, err
+	}
+
+	plan, err := s.Engine.buildGridImagePlan(req, s.Difficulty)
+	if err != nil {
+		return nil, err
+	}
+
+	images := make([]image.Image, 0, len(plan.tiles))
+	for _, tile := range plan.tiles {
+		img, err := render.LoadImage(tile.meta.Path)
+		if err != nil {
+			return nil, fmt.Errorf("加载 Grid 图片 %s 失败: %w", globalGridImageID(tile.meta), err)
+		}
+		if plan.applyRenderer && s.Renderer != nil && s.Renderer.Pipeline != nil {
+			img, err = s.Renderer.Pipeline.Apply(img)
+			if err != nil {
+				return nil, fmt.Errorf("处理 Grid 图片 %s 失败: %w", globalGridImageID(tile.meta), err)
+			}
+		}
+		images = append(images, img)
+	}
+
+	composed, placements, err := render.ComposeGrid(images, plan.compose)
+	if err != nil {
+		return nil, fmt.Errorf("合成 Grid 图片失败: %w", err)
+	}
+	bytes, err := render.EncodeWebPStrict(composed, plan.quality)
+	if err != nil {
+		return nil, fmt.Errorf("编码 Grid WebP 失败: %w", err)
+	}
+
+	now := time.Now()
+	ttl := s.ttl()
+	if plan.temporaryTTLSeconds > 0 {
+		ttl = time.Duration(plan.temporaryTTLSeconds) * time.Second
+	}
+	expiresAt := now.Add(ttl)
+	assetKey, err := s.AssetStore.Save(Asset{
+		Bytes:     bytes,
+		CreatedAt: now,
+		ExpiresAt: expiresAt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("保存 Grid 临时图片失败: %w", err)
+	}
+	MetricsInstance.GridImagesGenerated.Add(1)
+
+	result := &GridImageGenerateResult{
+		ID:              RandomHex(16),
+		AssetKey:        assetKey,
+		ContentType:     "image/webp",
+		CreatedAt:       now,
+		ExpiresAt:       expiresAt,
+		Tag:             plan.tag,
+		TagDisplay:      plan.tagDisplay,
+		Question:        plan.question,
+		Difficulty:      plan.difficulty,
+		Seed:            plan.seed,
+		ImageCount:      len(plan.tiles),
+		CorrectCount:    len(plan.correctNumbers),
+		CorrectNumbers:  append([]int(nil), plan.correctNumbers...),
+		CorrectImageIDs: append([]string(nil), plan.correctImageIDs...),
+		Width:           composed.Bounds().Dx(),
+		Height:          composed.Bounds().Dy(),
+		Rows:            plan.compose.Rows,
+		Columns:         plan.compose.Columns,
+		TileWidth:       plan.compose.TileWidth,
+		TileHeight:      plan.compose.TileHeight,
+		Gap:             plan.compose.Gap,
+		Padding:         plan.compose.Padding,
+		Fit:             plan.compose.Fit,
+		Background:      formatGridColor(plan.compose.Background),
+		Quality:         plan.quality,
+		Shuffle:         plan.shuffle,
+		ShowLabels:      plan.compose.ShowLabels,
+		LabelScale:      plan.compose.LabelScale,
+		LabelPosition:   plan.compose.LabelPosition,
+		LabelColor:      formatGridColor(plan.compose.LabelForeground),
+		LabelBackground: formatGridColor(plan.compose.LabelBackground),
+		ApplyRenderer:   plan.applyRenderer,
+		Tiles:           make([]GridImageGeneratedTile, 0, len(plan.tiles)),
+	}
+	if result.ID == "" {
+		result.ID = assetKey
+	}
+
+	for i, tile := range plan.tiles {
+		placement := placements[i]
+		result.Tiles = append(result.Tiles, GridImageGeneratedTile{
+			Number:  placement.Number,
+			ImageID: globalGridImageID(tile.meta),
+			File:    tile.meta.File,
+			Tags:    append([]string(nil), tile.meta.Tags...),
+			Correct: tile.correct,
+			X:       placement.X,
+			Y:       placement.Y,
+			Width:   placement.Width,
+			Height:  placement.Height,
+		})
+	}
+	return result, nil
+}
+
+func (s *Service) checkRateLimit(ctx VerifyContext) error {
+	if s == nil || !s.Secure.RateLimit.Enabled || s.SessionStore == nil {
+		return nil
+	}
+	if limiter, ok := s.SessionStore.(RateLimiter); ok {
+		if !limiter.Allow(ctx, s.Secure.RateLimit) && !s.Secure.RateLimit.SoftReject {
+			return fmt.Errorf("访问过于频繁")
+		}
+	}
+	return nil
 }
 
 func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *ClickVerifyRequest, ctx VerifyContext) (VerifyResult, error) {
@@ -367,4 +485,3 @@ func (s *Service) maxAttempts() int {
 	}
 	return s.MaxAttempts
 }
-

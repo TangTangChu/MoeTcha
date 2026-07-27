@@ -67,9 +67,12 @@ func main() {
 		Renderer:     renderer,
 		TTL:          config.Service.TTL,
 		MaxAttempts:  config.Service.MaxAttempts,
+		Difficulty:   config.Service.Difficulty,
 		IPPolicy:     config.Service.IPPolicy,
 		Secure:       config.Service.Secure,
 	}
+
+	fmt.Printf("难度：%s\n", config.Service.Difficulty)
 
 	router := httptransport.NewRouter(service, assetStore)
 	if err := router.Engine.Run(":" + config.HTTPPort); err != nil {

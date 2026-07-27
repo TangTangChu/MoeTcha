@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 )
 
@@ -54,15 +55,17 @@ type ClickItemInternal struct {
 	Path    string `json:"path"`
 }
 
-func (e *Engine) GenerateChallenge(kind ChallengeType) (*ChallengeInternal, error) {
+// --- 公开入口 ---
+
+func (e *Engine) GenerateChallenge(kind ChallengeType, diff Difficulty) (*ChallengeInternal, error) {
 	if kind == "" || kind == ChallengeRandom {
 		if e.rng.Intn(2) == 0 {
-			return e.GenerateGridChallenge()
+			return e.GenerateGridChallenge(diff)
 		}
 		return e.GenerateClickChallenge()
 	}
 	if kind == ChallengeGrid {
-		return e.GenerateGridChallenge()
+		return e.GenerateGridChallenge(diff)
 	}
 	if kind == ChallengeClick {
 		return e.GenerateClickChallenge()
@@ -70,50 +73,58 @@ func (e *Engine) GenerateChallenge(kind ChallengeType) (*ChallengeInternal, erro
 	return nil, fmt.Errorf("未知挑战类型: %s", kind)
 }
 
-func (e *Engine) GenerateGridChallenge() (*ChallengeInternal, error) {
+// --- Grid ---
+
+func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, error) {
 	tags := e.idx.GetAllGridTags()
 	if len(tags) == 0 {
 		return nil, fmt.Errorf("没有可用的 Grid 标签")
 	}
 
 	tag := tags[e.rng.Intn(len(tags))]
+	cfg := e.idx.GridConfigForTag(tag)
 
 	correctCandidates := e.idx.GetGridImagesByTag(tag)
 	if len(correctCandidates) == 0 {
 		return nil, fmt.Errorf("Grid 标签 %s 没有候选图片", tag)
 	}
 
-	correctCount := 2 + e.rng.Intn(3)
+	// 确定正确数（不超过候选数）
+	correctCount := cfg.correctPickCount(e.rng)
 	if correctCount > len(correctCandidates) {
 		correctCount = len(correctCandidates)
 	}
-	if correctCount > 9 {
-		correctCount = 9
+	if correctCount < 1 {
+		correctCount = 1
 	}
 
 	correct := pickUniqueGrid(e.rng, correctCandidates, correctCount)
-
 	allGrid := e.idx.AllGridImages()
-	if len(allGrid) < 9 {
-		return nil, fmt.Errorf("Grid 图片总数不足 9 张")
+
+	// 干扰项选取 + 降级
+	distGoal := cfg.Size - correctCount
+	distractors := e.pickDistractorsWithRNG(e.rng, tag, distGoal, diff, allGrid)
+
+	// 不够 → 减少正确数以降低干扰项需求
+	for correctCount > 1 && len(distractors) < cfg.Size-correctCount {
+		correctCount--
+		correct = pickUniqueGrid(e.rng, correctCandidates, correctCount)
+		distGoal = cfg.Size - correctCount
+		distractors = e.pickDistractorsWithRNG(e.rng, tag, distGoal, diff, allGrid)
+	}
+	// 还是不够 → 有多少拿多少，缩小网格
+	if len(distractors) > distGoal {
+		distractors = distractors[:distGoal]
+	}
+	actualDist := len(distractors)
+
+	total := correctCount + actualDist
+	if total < 3 {
+		return nil, fmt.Errorf("Grid 可用图片不足（至少需要 3 张），tag=%s total=%d", tag, total)
 	}
 
-	distractorCount := 9 - correctCount
-	distractors := make([]GridImageMeta, 0, distractorCount)
-	for _, img := range shuffleGrid(e.rng, allGrid) {
-		if hasTag(img.Tags, tag) {
-			continue
-		}
-		distractors = append(distractors, img)
-		if len(distractors) == distractorCount {
-			break
-		}
-	}
-	if len(distractors) != distractorCount {
-		return nil, fmt.Errorf("无法凑齐干扰项，tag=%s", tag)
-	}
-
-	final := make([]GridImageMeta, 0, 9)
+	// 合并 + 打乱
+	final := make([]GridImageMeta, 0, total)
 	final = append(final, correct...)
 	final = append(final, distractors...)
 	final = shuffleGrid(e.rng, final)
@@ -131,9 +142,11 @@ func (e *Engine) GenerateGridChallenge() (*ChallengeInternal, error) {
 		correctIDs = append(correctIDs, img.PackID+":"+img.ID)
 	}
 
+	question := buildQuestion(cfg.Question, e.idx.TagDisplay(tag))
+
 	return &ChallengeInternal{
 		Type:     ChallengeGrid,
-		Question: fmt.Sprintf("请选择所有包含【%s】的图片", tag),
+		Question: question,
 		Tag:      tag,
 		Grid: &GridChallengeInternal{
 			Images:          items,
@@ -141,6 +154,107 @@ func (e *Engine) GenerateGridChallenge() (*ChallengeInternal, error) {
 		},
 	}, nil
 }
+
+// correctPickCount 在 [min, max] 内随机。
+func (cfg GridConfig) correctPickCount(rng *rand.Rand) int {
+	lo, hi := cfg.CorrectMin, cfg.CorrectMax
+	if lo <= 0 {
+		lo = 1
+	}
+	if hi < lo {
+		hi = lo
+	}
+	if lo == hi {
+		return lo
+	}
+	return lo + rng.Intn(hi-lo+1)
+}
+
+// pickDistractorsWithRNG 按难度从全部 grid 图片中挑选干扰项。
+func (e *Engine) pickDistractorsWithRNG(rng *rand.Rand, tag string, need int, diff Difficulty, all []GridImageMeta) []GridImageMeta {
+	similarTags := e.idx.SimilarTags(tag)
+	similarSet := make(map[string]struct{}, len(similarTags))
+	for _, t := range similarTags {
+		similarSet[t] = struct{}{}
+	}
+
+	var similarPool, regularPool []GridImageMeta
+	for _, img := range all {
+		if hasTag(img.Tags, tag) {
+			continue
+		}
+		if hasAnyTag(img.Tags, similarSet) {
+			similarPool = append(similarPool, img)
+		} else {
+			regularPool = append(regularPool, img)
+		}
+	}
+
+	similarPool = shuffleGrid(rng, similarPool)
+	regularPool = shuffleGrid(rng, regularPool)
+
+	var out []GridImageMeta
+	similarUsed, regularUsed := 0, 0
+	appendPool := func(pool []GridImageMeta, used *int, n int) {
+		if n <= 0 || *used >= len(pool) {
+			return
+		}
+		available := pool[*used:]
+		if n > len(available) {
+			n = len(available)
+		}
+		out = append(out, available[:n]...)
+		*used += n
+	}
+
+	switch diff {
+	case DiffEasy:
+		// 只用不相似的干扰项
+		appendPool(regularPool, &regularUsed, need)
+	case DiffMedium:
+		// 一半相似一半不相似，缺一侧时从另一侧补齐。
+		half := need / 2
+		appendPool(similarPool, &similarUsed, half)
+		appendPool(regularPool, &regularUsed, need-len(out))
+	case DiffHard:
+		// 尽量用相似的
+		appendPool(similarPool, &similarUsed, need)
+		appendPool(regularPool, &regularUsed, need-len(out))
+	default:
+		appendPool(regularPool, &regularUsed, need)
+	}
+
+	// 仍不够则从尚未使用的另一类补齐。
+	if len(out) < need {
+		appendPool(similarPool, &similarUsed, need-len(out))
+	}
+	if len(out) < need {
+		appendPool(regularPool, &regularUsed, need-len(out))
+	}
+
+	return out
+}
+
+func takeN(in []GridImageMeta, n int) []GridImageMeta {
+	if n <= 0 || len(in) == 0 {
+		return nil
+	}
+	if n > len(in) {
+		n = len(in)
+	}
+	return in[:n]
+}
+
+func hasAnyTag(tags []string, targetSet map[string]struct{}) bool {
+	for _, t := range tags {
+		if _, ok := targetSet[t]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// --- Click ---
 
 func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 	tags := e.idx.GetAllClickTags()
@@ -167,9 +281,12 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 		return nil, fmt.Errorf("Click 图片中不存在目标 tag 的区域，tag=%s image=%s:%s", tag, img.PackID, img.ID)
 	}
 
+	cfg := e.idx.ClickConfigForTag(tag)
+	question := buildQuestion(cfg.Question, e.idx.TagDisplay(tag))
+
 	return &ChallengeInternal{
 		Type:     ChallengeClick,
-		Question: fmt.Sprintf("请点击图片中所有【%s】的位置", tag),
+		Question: question,
 		Tag:      tag,
 		Click: &ClickChallengeInternal{
 			Image: ClickItemInternal{
@@ -179,6 +296,15 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 			Regions: regions,
 		},
 	}, nil
+}
+
+// --- 工具函数 ---
+
+func buildQuestion(tmpl, display string) string {
+	if tmpl == "" {
+		tmpl = "请选出所有「{tag}」"
+	}
+	return strings.ReplaceAll(tmpl, "{tag}", display)
 }
 
 func hasTag(tags []string, target string) bool {

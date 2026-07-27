@@ -27,5 +27,5 @@ func (r *Router) handleAsset(c *gin.Context) {
 	}
 
 	core.MetricsInstance.AssetsServed.Add(1)
-	c.Data(http.StatusOK, render.ContentType(), asset.Bytes)
+	c.Data(http.StatusOK, render.ContentTypeForBytes(asset.Bytes), asset.Bytes)
 }

@@ -1,0 +1,98 @@
+<Page
+    x:Class="MoeTchaEditor.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:converters="using:MoeTchaEditor.Converters">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InvertBoolToVisibilityConverter x:Key="InvBoolToVis"/>
+    </Page.Resources>
+
+    <Grid Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <CommandBar Background="Transparent"
+                    DefaultLabelPosition="Right"
+                    IsDynamicOverflowEnabled="True">
+            <AppBarButton Icon="NewFolder" Label="新建"
+                          Command="{x:Bind VM.NewPackCommand}"
+                          IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+            <AppBarButton Icon="OpenFile" Label="打开"
+                          Command="{x:Bind VM.OpenPackCommand}"
+                          IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+            <AppBarSeparator/>
+            <AppBarButton Icon="Save" Label="保存"
+                          Command="{x:Bind VM.SaveCommand}"
+                          IsEnabled="{x:Bind VM.CanSave, Mode=OneWay}"/>
+        </CommandBar>
+
+        <NavigationView x:Name="MainNav"
+                        Grid.Row="1"
+                        PaneDisplayMode="Top"
+                        IsSettingsVisible="False"
+                        IsBackEnabled="False"
+                        IsBackButtonVisible="Collapsed"
+                        AlwaysShowHeader="False"
+                        Background="Transparent"
+                        SelectionChanged="NavSelectionChanged"
+                        Visibility="{x:Bind VM.HasPack, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="素材包设置" Tag="settings"
+                                    IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+                <NavigationViewItem Content="标签管理" Tag="tags"
+                                    IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+                <NavigationViewItem Content="Grid 图片" Tag="grid"
+                                    IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+                <NavigationViewItem Content="Click 图片" Tag="click"
+                                    IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+            </NavigationView.MenuItems>
+            <Frame x:Name="ContentFrame"
+                   Background="Transparent"/>
+        </NavigationView>
+
+        <!-- Empty state: no pack loaded -->
+        <Grid Grid.Row="1"
+              Padding="32"
+              Visibility="{x:Bind VM.HasPack, Mode=OneWay, Converter={StaticResource InvBoolToVis}}">
+            <StackPanel Width="400"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="12">
+                <FontIcon Glyph="&#xE8B7;" FontSize="36"
+                          HorizontalAlignment="Center"
+                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+                <TextBlock Text="新建或打开一个素材包"
+                           Style="{StaticResource EditorPageTitleStyle}"
+                           HorizontalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" Spacing="8"
+                            HorizontalAlignment="Center" Margin="0,4,0,0">
+                    <Button Content="新建素材包"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Command="{x:Bind VM.NewPackCommand}"
+                            IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+                    <Button Content="打开已有素材包"
+                            Command="{x:Bind VM.OpenPackCommand}"
+                            IsEnabled="{x:Bind VM.CanChangePack, Mode=OneWay}"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- Status bar -->
+        <Grid Grid.Row="2" Padding="12,6">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ProgressRing Width="14" Height="14"
+                              IsActive="{x:Bind VM.IsBusy, Mode=OneWay}"/>
+                <TextBlock Text="{x:Bind VM.Status, Mode=OneWay}"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

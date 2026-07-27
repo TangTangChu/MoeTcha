@@ -1,0 +1,114 @@
+<Page
+    x:Class="MoeTchaEditor.Views.TagsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <CommandBar Background="Transparent"
+                    Padding="20,0,8,0"
+                    DefaultLabelPosition="Right">
+            <CommandBar.Content>
+                <TextBlock Text="标签管理"
+                           Style="{StaticResource EditorPageTitleStyle}"/>
+            </CommandBar.Content>
+            <AppBarButton Icon="Add"
+                          Label="添加标签"
+                          Command="{x:Bind VM.AddTagCommand}"/>
+        </CommandBar>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid Padding="20,14,16,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="全部标签"
+                               Style="{StaticResource EditorSectionTitleStyle}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{x:Bind VM.TagKeys.Count, Mode=OneWay}"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </Grid>
+
+                <ListView Grid.Row="1"
+                          Padding="8,0,8,12"
+                          Background="Transparent"
+                          ItemsSource="{x:Bind VM.TagKeys, Mode=OneWay}"
+                          SelectedItem="{x:Bind VM.SelectedTagKey, Mode=TwoWay}"
+                          SelectionMode="Single">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}"
+                                       Padding="6,4"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <ScrollViewer Grid.Column="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalContentAlignment="Stretch"
+                          Visibility="{x:Bind VM.SelectedTagDef, Mode=OneWay, Converter={StaticResource NotNullToVis}}">
+                <StackPanel Padding="32,28,40,36"
+                            Spacing="20"
+                            MaxWidth="760"
+                            HorizontalAlignment="Left">
+                    <StackPanel Spacing="4">
+                        <TextBlock Style="{StaticResource EditorSectionTitleStyle}">
+                            <Run Text="编辑标签 · "/>
+                            <Run Text="{x:Bind VM.SelectedTagKey, Mode=OneWay}"
+                                 FontWeight="Bold"/>
+                        </TextBlock>
+                        <TextBlock Text="标签 key 用于图片引用，显示名可自由修改"
+                                   Style="{StaticResource EditorPageDescriptionStyle}"/>
+                    </StackPanel>
+
+                    <TextBox Header="显示名 (name)"
+                             Text="{Binding SelectedTagDef.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBox Header="相似标签 (similar) · 每行一个标签 key"
+                             Text="{Binding SelectedTagDef.SimilarStr, UpdateSourceTrigger=PropertyChanged}"
+                             AcceptsReturn="True"
+                             MinHeight="180"
+                             TextWrapping="Wrap"
+                             PlaceholderText="white_hair&#x0a;silver_hair"/>
+
+                    <Button Content="删除此标签"
+                            Command="{x:Bind VM.DeleteTagCommand}"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            HorizontalAlignment="Left"
+                            Margin="0,8,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid Grid.Column="1"
+                  Padding="32"
+                  Visibility="{x:Bind VM.SelectedTagDef, Mode=OneWay, Converter={StaticResource NullToVis}}">
+                <StackPanel VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Spacing="6">
+                    <FontIcon Glyph="&#xE8EC;"
+                              FontSize="28"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="选择一个标签开始编辑"
+                               Style="{StaticResource EditorSectionTitleStyle}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>

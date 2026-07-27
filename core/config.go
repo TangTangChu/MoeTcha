@@ -22,15 +22,23 @@ type StorageConfig struct {
 type ServiceConfig struct {
 	TTL         time.Duration
 	MaxAttempts int
+	Difficulty  Difficulty
 	IPPolicy    IPPolicy
 	Secure      SecurePolicy
 }
 
 func LoadConfig() (Config, error) {
 	port := getEnv("HTTP_PORT", "8080")
+
+	diff := Difficulty(strings.ToLower(getEnv("CAPTCHA_DIFFICULTY", "easy")))
+	if diff != DiffEasy && diff != DiffMedium && diff != DiffHard {
+		return Config{}, fmt.Errorf("CAPTCHA_DIFFICULTY 必须为 easy / medium / hard，当前=%s", diff)
+	}
+
 	service := ServiceConfig{
 		TTL:         mustDuration("CAPTCHA_TTL", 2*time.Minute),
 		MaxAttempts: mustInt("CAPTCHA_MAX_ATTEMPTS", 3),
+		Difficulty:  diff,
 		IPPolicy: IPPolicy{
 			Enabled:      mustBool("CAPTCHA_IP_ENABLED", false),
 			RequireMatch: mustBool("CAPTCHA_IP_REQUIRE_MATCH", true),
@@ -70,11 +78,11 @@ func LoadConfig() (Config, error) {
 	}
 
 	storage := StorageConfig{
-			Backend: getEnv("STORAGE_BACKEND", "memory"),
-		}
-		sqlitePath := getEnv("SQLITE_PATH", "./data/moetcha.db")
+		Backend: getEnv("STORAGE_BACKEND", "memory"),
+	}
+	sqlitePath := getEnv("SQLITE_PATH", "./data/moetcha.db")
 
-		return Config{HTTPPort: port, Service: service, Storage: storage, SQLitePath: sqlitePath}, nil
+	return Config{HTTPPort: port, Service: service, Storage: storage, SQLitePath: sqlitePath}, nil
 }
 
 func getEnv(key, def string) string {

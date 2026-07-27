@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MoeTchaEditor (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MoeTchaEditor (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

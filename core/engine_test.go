@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -17,11 +18,20 @@ func buildTestIndexer(t *testing.T) *Indexer {
 	provider := &mockPackProvider{
 		packs: []Pack{
 			{
-				ID:          "animals",
-				PackName:    "动物测试包",
-				Author:      "test",
-				Version:     "1.0",
-				Description: "for testing",
+				ID:       "animals",
+				PackName: "动物测试包",
+				Author:   "test",
+				Version:  "1.0",
+				TagDefs: map[string]TagDef{
+					"猫": {Name: "猫", Similar: []string{"大猫"}},
+					"狗": {Name: "狗"},
+					"鸟": {Name: "鸟"},
+				},
+				Grid: &GridConfig{
+					Size:       9,
+					CorrectMin: 2,
+					CorrectMax: 4,
+				},
 				GridImages: []GridImageMeta{
 					{ID: "cat_01", File: "cat_01.webp", Tags: []string{"猫"}, PackID: "animals", Path: "/tmp/cat_01.webp"},
 					{ID: "cat_02", File: "cat_02.webp", Tags: []string{"猫"}, PackID: "animals", Path: "/tmp/cat_02.webp"},
@@ -64,7 +74,7 @@ func TestGenerateGridChallenge(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)
 
-	chal, err := engine.GenerateGridChallenge()
+	chal, err := engine.GenerateGridChallenge(DiffEasy)
 	if err != nil {
 		t.Fatalf("GenerateGridChallenge failed: %v", err)
 	}
@@ -89,6 +99,11 @@ func TestGenerateGridChallenge(t *testing.T) {
 	}
 	if chal.Tag == "" {
 		t.Error("Tag is empty")
+	}
+	// Question should contain the tag's display name
+	display := idx.TagDisplay(chal.Tag)
+	if !strings.Contains(chal.Question, display) {
+		t.Errorf("Question %q does not contain display name %q", chal.Question, display)
 	}
 
 	// Verify correct IDs are in images
@@ -148,7 +163,7 @@ func TestGenerateRandomChallenge(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)
 
-	chal, err := engine.GenerateChallenge(ChallengeRandom)
+	chal, err := engine.GenerateChallenge(ChallengeRandom, DiffEasy)
 	if err != nil {
 		t.Fatalf("GenerateChallenge(random) failed: %v", err)
 	}
@@ -164,7 +179,7 @@ func TestGenerateChallengeExplicitType(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)
 
-	chal, err := engine.GenerateChallenge(ChallengeGrid)
+	chal, err := engine.GenerateChallenge(ChallengeGrid, DiffEasy)
 	if err != nil {
 		t.Fatalf("GenerateChallenge(grid) failed: %v", err)
 	}
@@ -172,7 +187,7 @@ func TestGenerateChallengeExplicitType(t *testing.T) {
 		t.Errorf("Type = %q, want grid", chal.Type)
 	}
 
-	chal, err = engine.GenerateChallenge(ChallengeClick)
+	chal, err = engine.GenerateChallenge(ChallengeClick, DiffEasy)
 	if err != nil {
 		t.Fatalf("GenerateChallenge(click) failed: %v", err)
 	}
@@ -185,8 +200,79 @@ func TestGenerateChallengeInvalidType(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)
 
-	_, err := engine.GenerateChallenge("invalid")
+	_, err := engine.GenerateChallenge("invalid", DiffEasy)
 	if err == nil {
 		t.Error("expected error for invalid type")
+	}
+}
+
+func TestDifficultyEasy(t *testing.T) {
+	idx := buildTestIndexer(t)
+	engine := NewEngine(idx)
+
+	// Easy mode: should not pick from similar tags as distractors
+	chal, err := engine.GenerateGridChallenge(DiffEasy)
+	if err != nil {
+		t.Fatalf("GenerateGridChallenge(easy) failed: %v", err)
+	}
+
+	// The only similar tag is "大猫" which has no images, so easy mode trivially
+	// works. Verify the distractors don't include the target tag images.
+	correctSet := make(map[string]bool)
+	for _, cid := range chal.Grid.CorrectImageIDs {
+		correctSet[cid] = true
+	}
+	for _, img := range chal.Grid.Images {
+		if correctSet[img.ImageID] {
+			continue
+		}
+		meta, ok := idx.GetGridImage(img.ImageID)
+		if !ok {
+			continue
+		}
+		if hasTag(meta.Tags, chal.Tag) {
+			t.Errorf("distractor %q has target tag %q", img.ImageID, chal.Tag)
+		}
+	}
+}
+
+func TestTagDisplay(t *testing.T) {
+	idx := buildTestIndexer(t)
+
+	if got := idx.TagDisplay("猫"); got != "猫" {
+		t.Errorf("TagDisplay(猫) = %q, want 猫", got)
+	}
+	if got := idx.TagDisplay("unknown"); got != "unknown" {
+		t.Errorf("TagDisplay(unknown) = %q, want unknown", got)
+	}
+}
+
+func TestSimilarTags(t *testing.T) {
+	idx := buildTestIndexer(t)
+
+	similar := idx.SimilarTags("猫")
+	if len(similar) != 1 || similar[0] != "大猫" {
+		t.Errorf("SimilarTags(猫) = %v, want [大猫]", similar)
+	}
+	if s := idx.SimilarTags("狗"); len(s) != 0 {
+		t.Errorf("SimilarTags(狗) should be empty, got %v", s)
+	}
+}
+
+func TestGridConfigForTag(t *testing.T) {
+	idx := buildTestIndexer(t)
+
+	cfg := idx.GridConfigForTag("猫")
+	if cfg.Size != 9 {
+		t.Errorf("GridConfigForTag size = %d, want 9", cfg.Size)
+	}
+}
+
+func TestClickConfigForTag(t *testing.T) {
+	idx := buildTestIndexer(t)
+
+	cfg := idx.ClickConfigForTag("猫")
+	if cfg.Question != defaultClickConfig().Question {
+		t.Errorf("ClickConfigForTag question = %q, want default", cfg.Question)
 	}
 }

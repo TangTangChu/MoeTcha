@@ -3,8 +3,10 @@ module moetcha
 go 1.25.1
 
 require (
+	github.com/gen2brain/webp v0.6.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/kolesa-team/go-webp v1.0.5
+	golang.org/x/image v0.36.0
 	modernc.org/sqlite v1.54.0
 )
 
@@ -14,6 +16,7 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -40,7 +43,7 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

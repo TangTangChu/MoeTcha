@@ -75,9 +75,7 @@ func (p *DirectoryProvider) LoadPacks() ([]Pack, error) {
 	return packs, nil
 }
 
-func loadOnePack(packID, packDir, metaPath string) (*Pack, error) {
-	_ = packDir
-
+func loadOnePack(packID, _, metaPath string) (*Pack, error) {
 	b, err := os.ReadFile(metaPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -97,12 +95,71 @@ func loadOnePack(packID, packDir, metaPath string) (*Pack, error) {
 		return nil, fmt.Errorf("pack=%s pack_name 为空", packID)
 	}
 
+	if err := validateTagDefs(packID, pack.TagDefs); err != nil {
+		return nil, err
+	}
+	if err := validateGridConfig(packID, pack.Grid); err != nil {
+		return nil, err
+	}
+	if err := validateClickConfig(packID, pack.Click); err != nil {
+		return nil, err
+	}
+
 	if err := preparePack(packID, filepath.Dir(metaPath), &pack); err != nil {
 		return nil, err
 	}
 
 	return &pack, nil
 }
+
+// --- tag_defs 校验 ---
+
+func validateTagDefs(packID string, defs map[string]TagDef) error {
+	for tag, def := range defs {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return fmt.Errorf("pack=%s tag_defs 中存在空 key", packID)
+		}
+		if strings.TrimSpace(def.Name) == "" {
+			return fmt.Errorf("pack=%s tag_defs[%s].name 为空", packID, tag)
+		}
+		for _, s := range def.Similar {
+			if s == tag {
+				return fmt.Errorf("pack=%s tag_defs[%s].similar 包含自身", packID, tag)
+			}
+		}
+	}
+	return nil
+}
+
+// --- grid / click 配置校验 ---
+
+func validateGridConfig(packID string, g *GridConfig) error {
+	if g == nil {
+		return nil
+	}
+	if g.Size != 0 && g.Size < 4 {
+		return fmt.Errorf("pack=%s grid.size 至少为 4, 当前=%d", packID, g.Size)
+	}
+	if g.CorrectMin != 0 && g.CorrectMin < 1 {
+		return fmt.Errorf("pack=%s grid.correct_min 至少为 1, 当前=%d", packID, g.CorrectMin)
+	}
+	if g.CorrectMax != 0 && g.CorrectMin != 0 && g.CorrectMax < g.CorrectMin {
+		return fmt.Errorf("pack=%s grid.correct_max(%d) 不能小于 correct_min(%d)", packID, g.CorrectMax, g.CorrectMin)
+	}
+	if g.Size != 0 && g.CorrectMax != 0 && g.CorrectMax >= g.Size {
+		return fmt.Errorf("pack=%s grid.correct_max(%d) 必须小于 grid.size(%d)", packID, g.CorrectMax, g.Size)
+	}
+	return nil
+}
+
+func validateClickConfig(packID string, c *ClickConfig) error {
+	_ = packID
+	_ = c
+	return nil
+}
+
+// --- 素材准备 ---
 
 func preparePack(packID, packDir string, pack *Pack) error {
 	seen := make(map[string]struct{})
