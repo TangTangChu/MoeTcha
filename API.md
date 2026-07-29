@@ -77,6 +77,8 @@ curl "http://localhost:8080/asset/a1b2c3d4" --output image.webp
 
 用途：从已加载的 Grid 素材中合成一张带编号的 WebP 网格图。生成结果会写入临时 asset，默认使用服务的 `CAPTCHA_TTL` 过期；响应中的 `asset_url` 和 `temporary_file_url` 都是临时访问地址，不暴露服务器本地文件系统路径。
 
+鉴权：当配置了 `API_TOKENS` 时，此接口需要 `Authorization: Bearer <token>` 或 `X-API-Token: <token>`；未配置时该接口开放（仅适合内网/本地开发，生产环境应通过 `API_TOKENS` 或反代鉴权保护）。
+
 请求体为 JSON。最小示例：
 
 ```json
@@ -173,6 +175,22 @@ curl "http://localhost:8080/asset/a1b2c3d4" --output image.webp
 ```
 
 该接口会返回答案元数据，适合编辑器、素材预览和内部生成工具使用；如果暴露给最终验证码客户端，应在网关或鉴权层限制访问，否则客户端可以直接读取正确答案。
+
+错误响应统一格式（4xx/5xx）：
+
+```json
+{
+  "error": "可读错误信息",
+  "code": "机器可读的错误码"
+}
+```
+
+常见 `code`：
+
+- `BAD_REQUEST`：请求参数不合法（400）
+- `RATE_LIMITED`：触发限流（429）
+- `UNAUTHORIZED`：缺少或无效 API Token（401）
+- `INTERNAL`：服务内部错误（500，不回显内部细节，详见日志）
 
 ## /healthz
 

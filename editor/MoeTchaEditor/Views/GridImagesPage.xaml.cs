@@ -106,8 +106,27 @@ public sealed partial class GridImagesPage : Page
             box.ItemsSource = VM.TagKeys;
     }
 
+    private string? _tagPrefixBeforeChoose;
+
+    private void TagBoxSuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        var text = sender.Text;
+        var lastComma = text.LastIndexOf(',');
+        _tagPrefixBeforeChoose = lastComma >= 0
+            ? text[..(lastComma + 1)] + " "
+            : "";
+    }
+
     private void TagBoxTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
+        if (args.Reason == AutoSuggestionBoxTextChangeReason.SuggestionChosen
+            && _tagPrefixBeforeChoose != null)
+        {
+            sender.Text = _tagPrefixBeforeChoose + sender.Text + ", ";
+            _tagPrefixBeforeChoose = null;
+            return;
+        }
+
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
 
         var query = sender.Text;

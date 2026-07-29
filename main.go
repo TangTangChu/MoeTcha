@@ -61,20 +61,25 @@ func main() {
 		Pipeline: render.NewPipeline(render.NoiseObfuscator{Density: 0.02}),
 	}
 	service := &core.Service{
-		Engine:       engine,
-		SessionStore: sessionStore,
-		AssetStore:   assetStore,
-		Renderer:     renderer,
-		TTL:          config.Service.TTL,
-		MaxAttempts:  config.Service.MaxAttempts,
-		Difficulty:   config.Service.Difficulty,
-		IPPolicy:     config.Service.IPPolicy,
-		Secure:       config.Service.Secure,
+		Engine:              engine,
+		SessionStore:        sessionStore,
+		AssetStore:          assetStore,
+		Renderer:            renderer,
+		TTL:                 config.Service.TTL,
+		MaxAttempts:         config.Service.MaxAttempts,
+		Difficulty:          config.Service.Difficulty,
+		IPPolicy:            config.Service.IPPolicy,
+		Secure:              config.Service.Secure,
+		GridConcurrency:     config.Service.GridGenerateConcurrency,
+		MaxSourcePixels:     config.Service.MaxSourceImagePixels,
 	}
 
 	fmt.Printf("难度：%s\n", config.Service.Difficulty)
+	if len(config.Service.APIAuth.Tokens) == 0 {
+		fmt.Println("警告：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）")
+	}
 
-	router := httptransport.NewRouter(service, assetStore)
+	router := httptransport.NewRouter(service, assetStore, config.Service.APIAuth)
 	if err := router.Engine.Run(":" + config.HTTPPort); err != nil {
 		if sqliteStore != nil {
 			sqliteStore.Close()

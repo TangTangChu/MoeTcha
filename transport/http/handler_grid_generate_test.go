@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -62,7 +63,7 @@ func TestGridGenerateRouteReturnsTemporaryWebPAsset(t *testing.T) {
 		TTL:        time.Minute,
 		Difficulty: core.DiffEasy,
 	}
-	router := NewRouter(service, store)
+	router := NewRouter(service, store, core.APIAuthConfig{})
 
 	body := `{"tag":"猫","image_count":4,"correct_count":2,"rows":2,"columns":2,"tile_width":32,"tile_height":32,"gap":2,"padding":2,"apply_renderer":false,"seed":9}`
 	req := httptest.NewRequest("POST", "http://example.test/grid/generate", strings.NewReader(body))
@@ -115,5 +116,88 @@ func writeRouteTestPNG(t *testing.T, path string, c color.RGBA) {
 	}
 	if err := f.Close(); err != nil {
 		t.Fatalf("close %s: %v", path, err)
+	}
+}
+
+func TestGridGenerateRequiresAPITokenWhenConfigured(t *testing.T) {
+	packRoot := t.TempDir()
+	packDir := filepath.Join(packRoot, "test")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatalf("mkdir pack: %v", err)
+	}
+	gridImages := []map[string]any{
+		{"file": "cat_01.png", "tags": []string{"猫"}},
+		{"file": "cat_02.png", "tags": []string{"猫"}},
+		{"file": "dog_01.png", "tags": []string{"狗"}},
+		{"file": "dog_02.png", "tags": []string{"狗"}},
+	}
+	for _, gi := range gridImages {
+		writeRouteTestPNG(t, filepath.Join(packDir, gi["file"].(string)), color.RGBA{A: 255})
+	}
+	meta := map[string]any{
+		"pack_name":   "auth test",
+		"tag_defs":    map[string]any{"猫": map[string]any{"name": "猫"}, "狗": map[string]any{"name": "狗"}},
+		"grid":        map[string]any{"size": 4, "correct_min": 1, "correct_max": 2},
+		"grid_images": gridImages,
+	}
+	metaBytes, _ := json.Marshal(meta)
+	if err := os.WriteFile(filepath.Join(packDir, "meta.json"), metaBytes, 0o644); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+	provider := &core.DirectoryProvider{BaseDir: packRoot, MetaFileName: "meta.json", Strict: true}
+	idx, err := core.NewIndexer(provider)
+	if err != nil {
+		t.Fatalf("NewIndexer: %v", err)
+	}
+	store := core.NewMemoryAssetStore()
+	service := &core.Service{
+		Engine:     core.NewEngine(idx),
+		AssetStore: store,
+		Renderer:   &core.Renderer{Pipeline: render.NewPipeline()},
+		TTL:        time.Minute,
+		Difficulty: core.DiffEasy,
+	}
+	token := "test-secret-token-1234"
+	router := NewRouter(service, store, core.APIAuthConfig{Tokens: []string{token}})
+
+	body := `{"tag":"猫","image_count":4,"correct_count":2,"rows":2,"columns":2,"tile_width":16,"tile_height":16,"apply_renderer":false,"seed":1}`
+
+	// 缺 token：401
+	req := httptest.NewRequest("POST", "http://example.test/grid/generate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	router.Engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("no-token status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	// 错误 token：401
+	req = httptest.NewRequest("POST", "http://example.test/grid/generate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	resp = httptest.NewRecorder()
+	router.Engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong-token status=%d", resp.Code)
+	}
+
+	// 正确 Bearer：200
+	req = httptest.NewRequest("POST", "http://example.test/grid/generate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp = httptest.NewRecorder()
+	router.Engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("valid-token status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	// 正确 X-API-Token：200
+	req = httptest.NewRequest("POST", "http://example.test/grid/generate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Token", token)
+	resp = httptest.NewRecorder()
+	router.Engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("x-api-token status=%d body=%s", resp.Code, resp.Body.String())
 	}
 }

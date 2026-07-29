@@ -1,12 +1,22 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"log/slog"
+	"runtime"
+	"sync"
 	"time"
 
 	"moetcha/core/render"
+)
+
+var ErrRateLimited = errors.New("访问过于频繁")
+
+const (
+	defaultMaxSourcePixels    = 16_000_000
+	defaultGridConcurrencyMin = 1
 )
 
 type Service struct {
@@ -19,6 +29,11 @@ type Service struct {
 	Difficulty   Difficulty
 	IPPolicy     IPPolicy
 	Secure       SecurePolicy
+
+	GridConcurrency     int
+	MaxSourcePixels     int
+	gridSem             chan struct{}
+	gridSemOnce         sync.Once
 }
 
 type IPPolicy struct {
@@ -182,11 +197,19 @@ func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyCont
 		return nil, err
 	}
 
+	sem := s.gridSemaphore()
+	sem <- struct{}{}
+	defer func() { <-sem }()
+
+	maxPixels := s.maxSourcePixels()
 	images := make([]image.Image, 0, len(plan.tiles))
 	for _, tile := range plan.tiles {
 		img, err := render.LoadImage(tile.meta.Path)
 		if err != nil {
 			return nil, fmt.Errorf("加载 Grid 图片 %s 失败: %w", globalGridImageID(tile.meta), err)
+		}
+		if px := imagePixels(img); px > maxPixels {
+			return nil, gridImageRequestError("源图 %s 像素数 %d 超过上限 %d", globalGridImageID(tile.meta), px, maxPixels)
 		}
 		if plan.applyRenderer && s.Renderer != nil && s.Renderer.Pipeline != nil {
 			img, err = s.Renderer.Pipeline.Apply(img)
@@ -284,7 +307,7 @@ func (s *Service) checkRateLimit(ctx VerifyContext) error {
 	}
 	if limiter, ok := s.SessionStore.(RateLimiter); ok {
 		if !limiter.Allow(ctx, s.Secure.RateLimit) && !s.Secure.RateLimit.SoftReject {
-			return fmt.Errorf("访问过于频繁")
+			return ErrRateLimited
 		}
 	}
 	return nil
@@ -484,4 +507,30 @@ func (s *Service) maxAttempts() int {
 		return 3
 	}
 	return s.MaxAttempts
+}
+
+func (s *Service) gridSemaphore() chan struct{} {
+	s.gridSemOnce.Do(func() {
+		n := s.GridConcurrency
+		if n <= 0 {
+			n = runtime.NumCPU()
+		}
+		if n < defaultGridConcurrencyMin {
+			n = defaultGridConcurrencyMin
+		}
+		s.gridSem = make(chan struct{}, n)
+	})
+	return s.gridSem
+}
+
+func (s *Service) maxSourcePixels() int {
+	if s.MaxSourcePixels > 0 {
+		return s.MaxSourcePixels
+	}
+	return defaultMaxSourcePixels
+}
+
+func imagePixels(img image.Image) int {
+	b := img.Bounds()
+	return b.Dx() * b.Dy()
 }

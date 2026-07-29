@@ -273,4 +273,21 @@ public sealed partial class ClickImagesPage : Page
 
     private static int Clamp(int value, int min, int max)
         => value < min ? min : value > max ? max : value;
+
+    private void RegionTagBoxLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is AutoSuggestBox box && VM != null)
+            box.ItemsSource = VM.TagKeys;
+    }
+
+    private void RegionTagBoxTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+        if (VM == null) return;
+
+        var query = (sender.Text ?? "").Trim();
+        sender.ItemsSource = string.IsNullOrWhiteSpace(query)
+            ? VM.TagKeys
+            : VM.TagKeys.Where(k => k.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
 }

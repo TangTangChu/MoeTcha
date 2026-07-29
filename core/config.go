@@ -25,6 +25,20 @@ type ServiceConfig struct {
 	Difficulty  Difficulty
 	IPPolicy    IPPolicy
 	Secure      SecurePolicy
+
+	// APIAuth 控制内部接口（如 /grid/generate）的 Bearer Token 鉴权。
+	// Tokens 为空时这些接口保持开放（仅适合内网/本地开发），非空时强制校验。
+	APIAuth APIAuthConfig
+
+	// GridGenerateConcurrency 限制 /grid/generate 同时渲染的请求数，0 表示按 CPU 核数。
+	GridGenerateConcurrency int
+
+	// MaxSourceImagePixels 限制单张源图解码后的像素数，超过则拒绝，防止内存放大。0 表示使用默认值。
+	MaxSourceImagePixels int
+}
+
+type APIAuthConfig struct {
+	Tokens []string
 }
 
 func LoadConfig() (Config, error) {
@@ -82,7 +96,29 @@ func LoadConfig() (Config, error) {
 	}
 	sqlitePath := getEnv("SQLITE_PATH", "./data/moetcha.db")
 
+	service.APIAuth = APIAuthConfig{Tokens: parseTokenList(getEnv("API_TOKENS", ""))}
+	service.GridGenerateConcurrency = mustInt("GRID_GENERATE_CONCURRENCY", 0)
+	service.MaxSourceImagePixels = mustInt("MAX_SOURCE_IMAGE_PIXELS", 0)
+
 	return Config{HTTPPort: port, Service: service, Storage: storage, SQLitePath: sqlitePath}, nil
+}
+
+func parseTokenList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func getEnv(key, def string) string {
@@ -160,6 +196,11 @@ func ValidateConfig(cfg Config) error {
 	if cfg.Service.Secure.Token.Enabled {
 		if cfg.Service.Secure.Token.SigningKey == "" {
 			return fmt.Errorf("CAPTCHA_TOKEN_SIGNING_KEY 为空")
+		}
+	}
+	for i, t := range cfg.Service.APIAuth.Tokens {
+		if len(t) < 8 {
+			return fmt.Errorf("API_TOKENS 第 %d 个 token 长度不足 8（建议使用高强度随机串）", i+1)
 		}
 	}
 	return nil

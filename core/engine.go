@@ -1,6 +1,8 @@
 package core
 
 import (
+	crand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -9,14 +11,21 @@ import (
 
 type Engine struct {
 	idx *Indexer
-	rng *rand.Rand
 }
 
 func NewEngine(idx *Indexer) *Engine {
-	return &Engine{
-		idx: idx,
-		rng: rand.New(rand.NewSource(time.Now().UnixNano())),
+	return &Engine{idx: idx}
+}
+
+// newRNG 构造一个请求级 *rand.Rand，混入 crypto 熵避免高并发下纳秒种子碰撞。
+func (e *Engine) newRNG() *rand.Rand {
+	var b [8]byte
+	_, _ = crand.Read(b[:])
+	seed := int64(binary.BigEndian.Uint64(b[:]))
+	if seed == 0 {
+		seed = time.Now().UnixNano()
 	}
+	return rand.New(rand.NewSource(seed))
 }
 
 type ChallengeType string
@@ -58,8 +67,9 @@ type ClickItemInternal struct {
 // --- 公开入口 ---
 
 func (e *Engine) GenerateChallenge(kind ChallengeType, diff Difficulty) (*ChallengeInternal, error) {
+	rng := e.newRNG()
 	if kind == "" || kind == ChallengeRandom {
-		if e.rng.Intn(2) == 0 {
+		if rng.Intn(2) == 0 {
 			return e.GenerateGridChallenge(diff)
 		}
 		return e.GenerateClickChallenge()
@@ -76,12 +86,13 @@ func (e *Engine) GenerateChallenge(kind ChallengeType, diff Difficulty) (*Challe
 // --- Grid ---
 
 func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, error) {
+	rng := e.newRNG()
 	tags := e.idx.GetAllGridTags()
 	if len(tags) == 0 {
 		return nil, fmt.Errorf("没有可用的 Grid 标签")
 	}
 
-	tag := tags[e.rng.Intn(len(tags))]
+	tag := tags[rng.Intn(len(tags))]
 	cfg := e.idx.GridConfigForTag(tag)
 
 	correctCandidates := e.idx.GetGridImagesByTag(tag)
@@ -89,8 +100,7 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 		return nil, fmt.Errorf("Grid 标签 %s 没有候选图片", tag)
 	}
 
-	// 确定正确数（不超过候选数）
-	correctCount := cfg.correctPickCount(e.rng)
+	correctCount := cfg.correctPickCount(rng)
 	if correctCount > len(correctCandidates) {
 		correctCount = len(correctCandidates)
 	}
@@ -98,21 +108,18 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 		correctCount = 1
 	}
 
-	correct := pickUniqueGrid(e.rng, correctCandidates, correctCount)
+	correct := pickUniqueGrid(rng, correctCandidates, correctCount)
 	allGrid := e.idx.AllGridImages()
 
-	// 干扰项选取 + 降级
 	distGoal := cfg.Size - correctCount
-	distractors := e.pickDistractorsWithRNG(e.rng, tag, distGoal, diff, allGrid)
+	distractors := e.pickDistractorsWithRNG(rng, tag, distGoal, diff, allGrid)
 
-	// 不够 → 减少正确数以降低干扰项需求
 	for correctCount > 1 && len(distractors) < cfg.Size-correctCount {
 		correctCount--
-		correct = pickUniqueGrid(e.rng, correctCandidates, correctCount)
+		correct = pickUniqueGrid(rng, correctCandidates, correctCount)
 		distGoal = cfg.Size - correctCount
-		distractors = e.pickDistractorsWithRNG(e.rng, tag, distGoal, diff, allGrid)
+		distractors = e.pickDistractorsWithRNG(rng, tag, distGoal, diff, allGrid)
 	}
-	// 还是不够 → 有多少拿多少，缩小网格
 	if len(distractors) > distGoal {
 		distractors = distractors[:distGoal]
 	}
@@ -123,11 +130,10 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 		return nil, fmt.Errorf("Grid 可用图片不足（至少需要 3 张），tag=%s total=%d", tag, total)
 	}
 
-	// 合并 + 打乱
 	final := make([]GridImageMeta, 0, total)
 	final = append(final, correct...)
 	final = append(final, distractors...)
-	final = shuffleGrid(e.rng, final)
+	final = shuffleGrid(rng, final)
 
 	items := make([]GridItemInternal, 0, len(final))
 	for _, img := range final {
@@ -257,19 +263,20 @@ func hasAnyTag(tags []string, targetSet map[string]struct{}) bool {
 // --- Click ---
 
 func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
+	rng := e.newRNG()
 	tags := e.idx.GetAllClickTags()
 	if len(tags) == 0 {
 		return nil, fmt.Errorf("没有可用的 Click 标签")
 	}
 
-	tag := tags[e.rng.Intn(len(tags))]
+	tag := tags[rng.Intn(len(tags))]
 
 	candidates := e.idx.GetClickImagesByTag(tag)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("Click 标签 %s 没有候选图片", tag)
 	}
 
-	img := candidates[e.rng.Intn(len(candidates))]
+	img := candidates[rng.Intn(len(candidates))]
 
 	var regions []Region
 	for _, r := range img.Regions {

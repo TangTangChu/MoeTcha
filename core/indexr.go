@@ -15,6 +15,7 @@ type packConfig struct {
 type Indexer struct {
 	gridImages   map[string]GridImageMeta
 	gridTagIndex map[string][]string
+	gridBareIDIndex map[string][]GridImageMeta
 
 	clickImages   map[string]ClickImageMeta
 	clickTagIndex map[string][]string
@@ -30,12 +31,13 @@ func NewIndexer(provider PackProvider) (*Indexer, error) {
 	}
 
 	idx := &Indexer{
-		gridImages:    make(map[string]GridImageMeta),
-		gridTagIndex:  make(map[string][]string),
-		clickImages:   make(map[string]ClickImageMeta),
-		clickTagIndex: make(map[string][]string),
-		tagDefs:       make(map[string]TagDef),
-		packConfigs:   make(map[string]packConfig),
+		gridImages:       make(map[string]GridImageMeta),
+		gridTagIndex:     make(map[string][]string),
+		gridBareIDIndex:  make(map[string][]GridImageMeta),
+		clickImages:      make(map[string]ClickImageMeta),
+		clickTagIndex:    make(map[string][]string),
+		tagDefs:          make(map[string]TagDef),
+		packConfigs:      make(map[string]packConfig),
 	}
 
 	if err := idx.BuildFromPacks(packs); err != nil {
@@ -78,11 +80,12 @@ func (idx *Indexer) BuildFromPacks(packs []Pack) error {
 				return fmt.Errorf("Grid 图片全局ID冲突: %s", gid)
 			}
 
-			idx.gridImages[gid] = img
-			for _, tag := range img.Tags {
-				idx.gridTagIndex[tag] = append(idx.gridTagIndex[tag], gid)
-			}
+		idx.gridImages[gid] = img
+		for _, tag := range img.Tags {
+			idx.gridTagIndex[tag] = append(idx.gridTagIndex[tag], gid)
 		}
+		idx.gridBareIDIndex[img.ID] = append(idx.gridBareIDIndex[img.ID], img)
+	}
 
 		for _, img := range pack.ClickImages {
 			gid := globalImageID(packID, img.ID)
@@ -223,6 +226,11 @@ func (idx *Indexer) GetClickImagesByTag(tag string) []ClickImageMeta {
 func (idx *Indexer) GetGridImage(globalID string) (GridImageMeta, bool) {
 	img, ok := idx.gridImages[globalID]
 	return img, ok
+}
+
+// GetGridImagesByBareID 返回裸 ID（不含 pack 前缀）匹配的全部图片，可能多于一张。
+func (idx *Indexer) GetGridImagesByBareID(bareID string) []GridImageMeta {
+	return idx.gridBareIDIndex[bareID]
 }
 
 func (idx *Indexer) GetClickImage(globalID string) (ClickImageMeta, bool) {

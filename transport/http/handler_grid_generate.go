@@ -1,6 +1,7 @@
 package http
 
 import (
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,14 +12,14 @@ import (
 
 func (r *Router) handleGridGenerate(c *gin.Context) {
 	if r.Service == nil || r.Assets == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "service 或 asset store 未初始化"})
+		respondAPIError(c, http.StatusInternalServerError, "SERVICE_UNINITIALIZED", "service 或 asset store 未初始化")
 		return
 	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	var req core.GridImageGenerateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求 JSON 无效: " + err.Error()})
+		respondAPIError(c, http.StatusBadRequest, "BAD_REQUEST", "请求 JSON 无效: "+err.Error())
 		return
 	}
 
@@ -27,13 +28,12 @@ func (r *Router) handleGridGenerate(c *gin.Context) {
 		UserAgent: c.GetHeader("User-Agent"),
 	})
 	if err != nil {
-		status := http.StatusInternalServerError
-		if core.IsGridImageRequestError(err) {
-			status = http.StatusBadRequest
-		} else if strings.Contains(err.Error(), "访问过于频繁") {
-			status = http.StatusTooManyRequests
+		status, code, msg := classifyGridError(err)
+		if status >= 500 {
+			rid, _ := c.Get("request_id")
+			slog.Error("grid_generate_failed", "request_id", rid, "error", err.Error(), "path", c.Request.URL.Path)
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		respondAPIError(c, status, code, msg)
 		return
 	}
 

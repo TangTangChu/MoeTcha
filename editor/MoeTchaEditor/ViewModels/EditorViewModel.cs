@@ -21,7 +21,9 @@ public partial class EditorViewModel : ObservableObject
     public partial string Status { get; set; } = "就绪";
 
     [ObservableProperty]
-    public partial string SelectedTagKey { get; set; } = "";
+    public partial TagUsageView? SelectedTag { get; set; }
+
+    public string SelectedTagKey => SelectedTag?.Key ?? "";
 
     [ObservableProperty]
     public partial ClickImageDisplay? SelectedClickImage { get; set; }
@@ -34,6 +36,19 @@ public partial class EditorViewModel : ObservableObject
 
     public ObservableCollection<GridImageDisplay> GridImageDisplays { get; } = [];
     public ObservableCollection<ClickImageDisplay> ClickImageDisplays { get; } = [];
+    public ObservableCollection<TagUsageView> TagUsages { get; } = [];
+    public ObservableCollection<TagUsageView> TagUsagesView { get; } = [];
+    private readonly TagUsageIndex _tagIndex = new();
+    public TagUsageIndex TagIndex => _tagIndex;
+
+    [ObservableProperty]
+    public partial bool ShowUnusedOnly { get; set; }
+
+    [ObservableProperty]
+    public partial bool SortByUsage { get; set; }
+
+    [ObservableProperty]
+    public partial string TagSearchText { get; set; } = "";
 
     private readonly HashSet<INotifyPropertyChanged> _observedObjects = [];
     private bool _suppressDirty;
@@ -71,11 +86,16 @@ public partial class EditorViewModel : ObservableObject
     public bool HasPack => !string.IsNullOrWhiteSpace(Pack.PackDirectory);
     public bool CanSave => HasPack && !IsBusy;
     public bool CanChangePack => !IsBusy;
-    public List<string> TagKeys => [.. Pack.TagDefs.Keys.OrderBy(key => key, StringComparer.Ordinal)];
+    public List<string> TagKeys => TagUsages.Where(t => t.IsDefined).Select(t => t.Key).ToList();
     public bool HasSelectedClickImage => SelectedClickImage != null;
 
     public TagDefInfo? SelectedTagDef =>
         !string.IsNullOrEmpty(SelectedTagKey) && Pack.TagDefs.TryGetValue(SelectedTagKey, out var d) ? d : null;
+
+    public bool HasSelectedTag => SelectedTag != null;
+
+    public bool CanDefineSelectedTag =>
+        SelectedTag != null && !string.IsNullOrEmpty(SelectedTagKey) && !Pack.TagDefs.ContainsKey(SelectedTagKey);
 
     partial void OnPackChanged(EditorPack value)
     {
@@ -102,8 +122,17 @@ public partial class EditorViewModel : ObservableObject
         OnPropertyChanged(nameof(CanChangePack));
     }
 
-    partial void OnSelectedTagKeyChanged(string value)
-        => OnPropertyChanged(nameof(SelectedTagDef));
+    partial void OnSelectedTagChanged(TagUsageView? value)
+    {
+        OnPropertyChanged(nameof(SelectedTagKey));
+        OnPropertyChanged(nameof(SelectedTagDef));
+        OnPropertyChanged(nameof(HasSelectedTag));
+        OnPropertyChanged(nameof(CanDefineSelectedTag));
+    }
+
+    partial void OnShowUnusedOnlyChanged(bool value) => RebuildTagUsagesView();
+    partial void OnSortByUsageChanged(bool value) => RebuildTagUsagesView();
+    partial void OnTagSearchTextChanged(string value) => RebuildTagUsagesView();
 
     partial void OnSelectedClickImageChanged(ClickImageDisplay? value)
         => OnPropertyChanged(nameof(HasSelectedClickImage));
@@ -213,7 +242,10 @@ public partial class EditorViewModel : ObservableObject
             PackSerializer.Save(Pack);
             Pack.IsNew = false;
             IsDirty = false;
-            Status = $"已保存 — {DateTime.Now:HH:mm:ss}";
+            var dangling = _tagIndex.DanglingKeys;
+            Status = dangling.Count == 0
+                ? $"已保存 — {DateTime.Now:HH:mm:ss}"
+                : $"已保存 — {DateTime.Now:HH:mm:ss}（{dangling.Count} 个未定义标签: {string.Join(", ", dangling)}）";
         }
         catch (Exception ex)
         {
@@ -230,7 +262,7 @@ public partial class EditorViewModel : ObservableObject
         Pack.TagDefs[key] = new TagDefInfo { Name = key };
         RebindPackGraph();
         RefreshTags();
-        SelectedTagKey = key;
+        SelectedTag = TagUsages.FirstOrDefault(t => t.Key == key);
         MarkDirty();
         Status = $"已添加：{key}";
     }
@@ -238,27 +270,44 @@ public partial class EditorViewModel : ObservableObject
     [RelayCommand]
     private void DeleteTag()
     {
-        if (string.IsNullOrEmpty(SelectedTagKey)) return;
-        var key = SelectedTagKey;
-        var gridReferences = Pack.GridImages.Count(image => image != null && image.Tags.Contains(key));
-        var clickReferences = Pack.ClickImages.Sum(image =>
-            image?.Regions.Count(region => region != null && string.Equals(region.Tag, key, StringComparison.Ordinal)) ?? 0);
-        var similarReferences = Pack.TagDefs.Count(pair =>
-            !string.Equals(pair.Key, key, StringComparison.Ordinal)
-            && pair.Value?.Similar.Contains(key) == true);
-        if (gridReferences + clickReferences + similarReferences > 0)
+        if (SelectedTag == null) return;
+        var key = SelectedTag.Key;
+        var usage = _tagIndex.Get(key);
+        if (usage != null && (usage.GridCount + usage.ClickCount + usage.SimilarCount) > 0)
         {
-            Status = $"无法删除「{key}」：仍被 {gridReferences} 张 Grid 图片、{clickReferences} 个区域、{similarReferences} 个相似标签引用";
+            Status = $"无法删除「{key}」：仍被引用 — {BuildUsageDetail(usage)}";
             return;
         }
 
-        if (!Pack.TagDefs.Remove(SelectedTagKey)) return;
+        if (!Pack.TagDefs.Remove(key)) return;
 
         RebindPackGraph();
         RefreshTags();
-        SelectedTagKey = TagKeys.FirstOrDefault() ?? "";
+        SelectedTag = TagUsages.FirstOrDefault(t => t.IsDefined);
         MarkDirty();
         Status = "标签已删除";
+    }
+
+    [RelayCommand]
+    private void DefineSelectedTag()
+    {
+        if (SelectedTag == null || string.IsNullOrEmpty(SelectedTagKey)) return;
+        if (Pack.TagDefs.ContainsKey(SelectedTagKey)) return;
+
+        Pack.TagDefs[SelectedTagKey] = new TagDefInfo { Name = SelectedTagKey };
+        RebindPackGraph();
+        RefreshTags();
+        MarkDirty();
+        Status = $"已定义标签：{SelectedTagKey}";
+    }
+
+    private static string BuildUsageDetail(TagUsage u)
+    {
+        var parts = new List<string>();
+        if (u.GridCount > 0) parts.Add($"{u.GridCount} Grid 图片");
+        if (u.ClickCount > 0) parts.Add($"{u.ClickCount} Click 区域");
+        if (u.SimilarCount > 0) parts.Add($"{u.SimilarCount} 相似标签");
+        return parts.Count == 0 ? "无引用" : string.Join(" · ", parts);
     }
 
     [RelayCommand]
@@ -381,8 +430,8 @@ public partial class EditorViewModel : ObservableObject
     {
         Pack.Normalize();
         SelectedClickImage = null;
-        if (!Pack.TagDefs.ContainsKey(SelectedTagKey))
-            SelectedTagKey = TagKeys.FirstOrDefault() ?? "";
+        if (SelectedTag == null || !Pack.TagDefs.ContainsKey(SelectedTag.Key))
+            SelectedTag = TagUsages.FirstOrDefault(t => t.IsDefined);
 
         OnPropertyChanged(nameof(Pack));
         OnPropertyChanged(nameof(TagKeys));
@@ -550,6 +599,8 @@ public partial class EditorViewModel : ObservableObject
                 if (region != null)
                     Subscribe(region);
         }
+
+        RebuildTagIndex();
     }
 
     private void Subscribe(INotifyPropertyChanged? observed)
@@ -578,8 +629,70 @@ public partial class EditorViewModel : ObservableObject
                 OnPropertyChanged(nameof(CanSave));
             }
         }
+        else if (sender is GridImageInfo && e.PropertyName == nameof(GridImageInfo.Tags))
+        {
+            RebuildTagIndex();
+        }
+        else if (sender is RegionInfo && e.PropertyName == nameof(RegionInfo.Tag))
+        {
+            RebuildTagIndex();
+        }
+        else if (sender is TagDefInfo && e.PropertyName == nameof(TagDefInfo.Similar))
+        {
+            RebuildTagIndex();
+        }
 
         MarkDirty();
+    }
+
+    private void RebuildTagIndex()
+    {
+        var selectedKey = SelectedTag?.Key;
+        _tagIndex.Rebuild(Pack);
+
+        TagUsages.Clear();
+        foreach (var u in _tagIndex.All)
+            TagUsages.Add(new TagUsageView(u.Key, u.IsDefined, u.GridCount, u.ClickCount, u.SimilarCount, u.IsUnused));
+
+        if (selectedKey != null)
+        {
+            var match = TagUsages.FirstOrDefault(t => string.Equals(t.Key, selectedKey, StringComparison.Ordinal));
+            if (match != null && !ReferenceEquals(match, SelectedTag))
+                SelectedTag = match;
+        }
+
+        OnPropertyChanged(nameof(TagKeys));
+        OnPropertyChanged(nameof(SelectedTagDef));
+        OnPropertyChanged(nameof(HasSelectedTag));
+        OnPropertyChanged(nameof(CanDefineSelectedTag));
+        RebuildTagUsagesView();
+    }
+
+    private void RebuildTagUsagesView()
+    {
+        var selectedKey = SelectedTag?.Key;
+        IEnumerable<TagUsageView> src = TagUsages;
+        if (ShowUnusedOnly) src = src.Where(t => t.IsUnused);
+
+        var search = TagSearchText?.Trim() ?? "";
+        if (!string.IsNullOrEmpty(search))
+            src = src.Where(t => t.Key.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+        if (SortByUsage)
+            src = src.OrderByDescending(t => t.GridCount + t.ClickCount + t.SimilarCount)
+                     .ThenBy(t => t.Key, StringComparer.Ordinal);
+        else
+            src = src.OrderBy(t => t.Key, StringComparer.Ordinal);
+
+        TagUsagesView.Clear();
+        foreach (var t in src) TagUsagesView.Add(t);
+
+        if (selectedKey != null)
+        {
+            var match = TagUsagesView.FirstOrDefault(t => string.Equals(t.Key, selectedKey, StringComparison.Ordinal));
+            if (match != null && !ReferenceEquals(match, SelectedTag))
+                SelectedTag = match;
+        }
     }
 
     private async Task<List<ConvertedImage>> ConvertImagesAsync(IReadOnlyList<ImageInput> inputs)
@@ -824,4 +937,36 @@ public class ClickImageDisplay
 
     private static string SafePath(string packDir, string file)
         => Path.Combine(packDir, Path.GetFileName(file));
+}
+
+public sealed class TagUsageView
+{
+    public string Key { get; }
+    public bool IsDefined { get; }
+    public int GridCount { get; }
+    public int ClickCount { get; }
+    public int SimilarCount { get; }
+    public bool IsUnused { get; }
+
+    public string Summary
+    {
+        get
+        {
+            var parts = new List<string>(3);
+            if (GridCount > 0) parts.Add($"Grid {GridCount}");
+            if (ClickCount > 0) parts.Add($"Click {ClickCount}");
+            if (SimilarCount > 0) parts.Add($"Similar {SimilarCount}");
+            return parts.Count == 0 ? "无引用" : string.Join(" · ", parts);
+        }
+    }
+
+    public TagUsageView(string key, bool isDefined, int gridCount, int clickCount, int similarCount, bool isUnused)
+    {
+        Key = key;
+        IsDefined = isDefined;
+        GridCount = gridCount;
+        ClickCount = clickCount;
+        SimilarCount = similarCount;
+        IsUnused = isUnused;
+    }
 }

@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	crand "crypto/rand"
+	"encoding/binary"
+
 	"moetcha/core/render"
 )
 
@@ -153,11 +156,11 @@ func (e *Engine) buildGridImagePlan(req GridImageGenerateRequest, defaultDifficu
 		len(req.CorrectNumbers) > maxGeneratedImageCount {
 		return nil, gridImageRequestError("图片列表长度不能超过 %d", maxGeneratedImageCount)
 	}
-
-	seed := time.Now().UnixNano()
-	if req.Seed != nil {
-		seed = *req.Seed
+	if len(req.ImageIDs) > 0 && len(req.DistractorImageIDs) > 0 {
+		return nil, gridImageRequestError("image_ids 与 distractor_image_ids 不能同时使用")
 	}
+
+	seed := mixSeed(req.Seed)
 	rng := rand.New(rand.NewSource(seed))
 
 	explicitImages, err := e.resolveGridImageIDs(req.ImageIDs)
@@ -171,9 +174,6 @@ func (e *Engine) buildGridImagePlan(req GridImageGenerateRequest, defaultDifficu
 	explicitDistractors, err := e.resolveGridImageIDs(req.DistractorImageIDs)
 	if err != nil {
 		return nil, err
-	}
-	if len(explicitImages) > 0 && len(explicitDistractors) > 0 {
-		return nil, gridImageRequestError("image_ids 与 distractor_image_ids 不能同时使用")
 	}
 	if len(req.CorrectNumbers) > 0 {
 		if len(explicitImages) == 0 {
@@ -437,22 +437,14 @@ func (e *Engine) resolveGridImageID(id string) (GridImageMeta, error) {
 	if strings.Contains(id, ":") {
 		return GridImageMeta{}, gridImageRequestError("Grid 图片不存在: %s", id)
 	}
-
-	var match GridImageMeta
-	found := 0
-	for _, img := range e.idx.AllGridImages() {
-		if img.ID == id {
-			match = img
-			found++
-		}
-	}
-	if found == 0 {
+	matches := e.idx.GetGridImagesByBareID(id)
+	if len(matches) == 0 {
 		return GridImageMeta{}, gridImageRequestError("Grid 图片不存在: %s", id)
 	}
-	if found > 1 {
+	if len(matches) > 1 {
 		return GridImageMeta{}, gridImageRequestError("Grid 图片 ID 不唯一，请使用 pack:image 格式: %s", id)
 	}
-	return match, nil
+	return matches[0], nil
 }
 
 func resolveRequestedImageCount(req GridImageGenerateRequest, configured, explicitCount int) (int, error) {
@@ -813,4 +805,18 @@ func parseGridColor(value string, fallback color.RGBA) (color.RGBA, error) {
 
 func formatGridColor(value color.RGBA) string {
 	return fmt.Sprintf("#%02x%02x%02x%02x", value.R, value.G, value.B, value.A)
+}
+
+// mixSeed 在未显式指定 seed 时混入 crypto 熵，避免高并发下纳秒种子碰撞导致选图重复。
+func mixSeed(seed *int64) int64 {
+	if seed != nil {
+		return *seed
+	}
+	var b [8]byte
+	_, _ = crand.Read(b[:])
+	s := int64(binary.BigEndian.Uint64(b[:]))
+	if s == 0 {
+		s = time.Now().UnixNano()
+	}
+	return s
 }

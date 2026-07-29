@@ -71,10 +71,11 @@
                                        ToolTipService.ToolTip="{x:Bind FileName}"/>
 
                             <AutoSuggestBox Grid.Row="2"
-                                            Text="{x:Bind Source.TagsStr, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                            PlaceholderText="输入标签"
+                                            Text="{x:Bind Source.TagsStr, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                            PlaceholderText="输入标签（选择建议自动追加）"
                                             Loaded="TagBoxLoaded"
-                                            TextChanged="TagBoxTextChanged"/>
+                                            TextChanged="TagBoxTextChanged"
+                                            SuggestionChosen="TagBoxSuggestionChosen"/>
 
                             <Grid Grid.Row="3"
                                   ColumnSpacing="8"
