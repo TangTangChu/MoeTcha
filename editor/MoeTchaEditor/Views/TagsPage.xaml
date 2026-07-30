@@ -106,75 +106,166 @@
                 </ListView>
             </Grid>
 
+            <!-- 未选择标签 -->
+            <Grid Grid.Column="1"
+                  Padding="32"
+                  Visibility="{x:Bind VM.HasSelectedTag, Mode=OneWay, Converter={StaticResource InvBoolToVis}}">
+                <StackPanel VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Spacing="6">
+                    <FontIcon Glyph="&#xE8EC;"
+                              FontSize="28"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock Text="选择一个标签查看引用的图片"
+                               Style="{StaticResource EditorSectionTitleStyle}"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- 标签详情 + 引用图片 -->
             <ScrollViewer Grid.Column="1"
                           VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
                           HorizontalContentAlignment="Stretch"
-                          Visibility="{x:Bind VM.SelectedTagDef, Mode=OneWay, Converter={StaticResource NotNullToVis}}">
+                          Visibility="{x:Bind VM.HasSelectedTag, Mode=OneWay, Converter={StaticResource BoolToVis}}">
                 <StackPanel Padding="32,28,40,36"
                             Spacing="20"
                             MaxWidth="760"
                             HorizontalAlignment="Left">
+
                     <StackPanel Spacing="4">
                         <TextBlock Style="{StaticResource EditorSectionTitleStyle}">
-                            <Run Text="编辑标签 · "/>
+                            <Run Text="标签 · "/>
                             <Run Text="{x:Bind VM.SelectedTagKey, Mode=OneWay}"
                                  FontWeight="Bold"/>
                         </TextBlock>
-                        <TextBlock Text="标签 key 用于图片引用，显示名可自由修改"
+                        <TextBlock Text="查看引用此标签的图片，并可编辑标签定义"
                                    Style="{StaticResource EditorPageDescriptionStyle}"/>
                     </StackPanel>
 
-                    <TextBox Header="显示名 (name)"
-                             Text="{Binding SelectedTagDef.Name, UpdateSourceTrigger=PropertyChanged}"/>
-                    <TextBox Header="相似标签 (similar) · 每行一个标签 key"
-                             Text="{Binding SelectedTagDef.SimilarStr, UpdateSourceTrigger=PropertyChanged}"
-                             AcceptsReturn="True"
-                             MinHeight="180"
-                             TextWrapping="Wrap"
-                             PlaceholderText="white_hair&#x0a;silver_hair"/>
+                    <!-- 已定义：编辑区 -->
+                    <StackPanel Spacing="14"
+                                Visibility="{x:Bind VM.SelectedTagDef, Mode=OneWay, Converter={StaticResource NotNullToVis}}">
+                        <TextBox Header="显示名 (name)"
+                                 Text="{Binding SelectedTagDef.Name, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Header="相似标签 (similar) · 每行一个标签 key"
+                                 Text="{Binding SelectedTagDef.SimilarStr, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 MinHeight="140"
+                                 TextWrapping="Wrap"
+                                 PlaceholderText="white_hair&#x0a;silver_hair"/>
+                        <Button Content="删除此标签"
+                                Command="{x:Bind VM.DeleteTagCommand}"
+                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                HorizontalAlignment="Left"/>
+                    </StackPanel>
 
-                    <Button Content="删除此标签"
-                            Command="{x:Bind VM.DeleteTagCommand}"
-                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                            HorizontalAlignment="Left"
-                            Margin="0,8,0,0"/>
+                    <!-- 未定义：定义提示 -->
+                    <Border Padding="16,12"
+                            CornerRadius="6"
+                            BorderThickness="1"
+                            Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+                            BorderBrush="{ThemeResource SystemFillColorCautionBrush}"
+                            Visibility="{x:Bind VM.CanDefineSelectedTag, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE9F9;"
+                                          FontSize="16"
+                                          VerticalAlignment="Center"
+                                          Foreground="{ThemeResource SystemFillColorCautionBrush}"/>
+                                <TextBlock Text="此标签被图片引用但尚未定义"
+                                           VerticalAlignment="Center"
+                                           FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <Button Content="定义此标签"
+                                    Command="{x:Bind VM.DefineSelectedTagCommand}"
+                                    HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 引用此标签的图片 -->
+                    <StackPanel Spacing="10" Margin="0,4,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="引用此标签的图片"
+                                       Style="{StaticResource EditorSectionTitleStyle}"/>
+                            <TextBlock Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                <Run Text="{x:Bind VM.SelectedTagGridImages.Count, Mode=OneWay}"/>
+                                <Run Text=" Grid · "/>
+                                <Run Text="{x:Bind VM.SelectedTagClickImages.Count, Mode=OneWay}"/>
+                                <Run Text=" Click"/>
+                            </TextBlock>
+                        </Grid>
+
+                        <StackPanel Spacing="8"
+                                    Visibility="{x:Bind VM.HasSelectedTagGridImages, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Grid 图片"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ItemsRepeater ItemsSource="{x:Bind VM.SelectedTagGridImages, Mode=OneWay}">
+                                <ItemsRepeater.Layout>
+                                    <UniformGridLayout MinItemWidth="72"
+                                                       MinItemHeight="72"
+                                                       MinRowSpacing="8"
+                                                       MinColumnSpacing="8"
+                                                       Orientation="Horizontal"/>
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TaggedImageDisplay">
+                                        <Border Width="72" Height="72"
+                                                CornerRadius="4"
+                                                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                                                ToolTipService.ToolTip="{x:Bind FileName}">
+                                            <Image Source="{x:Bind Thumbnail}" Stretch="Uniform"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+
+                        <StackPanel Spacing="8"
+                                    Visibility="{x:Bind VM.HasSelectedTagClickImages, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Click 图片"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <ItemsRepeater ItemsSource="{x:Bind VM.SelectedTagClickImages, Mode=OneWay}">
+                                <ItemsRepeater.Layout>
+                                    <UniformGridLayout MinItemWidth="72"
+                                                       MinItemHeight="72"
+                                                       MinRowSpacing="8"
+                                                       MinColumnSpacing="8"
+                                                       Orientation="Horizontal"/>
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TaggedImageDisplay">
+                                        <Border Width="72" Height="72"
+                                                CornerRadius="4"
+                                                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                                                ToolTipService.ToolTip="{x:Bind FileName}">
+                                            <Image Source="{x:Bind Thumbnail}" Stretch="Uniform"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+
+                        <TextBlock Text="此标签暂无图片引用"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Visibility="{x:Bind VM.HasSelectedTagImages, Mode=OneWay, Converter={StaticResource InvBoolToVis}}"/>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
-
-            <Grid Grid.Column="1"
-                  Padding="32"
-                  Visibility="{x:Bind VM.SelectedTagDef, Mode=OneWay, Converter={StaticResource NullToVis}}">
-                <StackPanel VerticalAlignment="Center"
-                            HorizontalAlignment="Center"
-                            Spacing="6"
-                            Visibility="{x:Bind VM.HasSelectedTag, Mode=OneWay, Converter={StaticResource InvBoolToVis}}">
-                    <FontIcon Glyph="&#xE8EC;"
-                              FontSize="28"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Text="选择一个标签开始编辑"
-                               Style="{StaticResource EditorSectionTitleStyle}"/>
-                </StackPanel>
-
-                <StackPanel VerticalAlignment="Center"
-                            HorizontalAlignment="Center"
-                            Spacing="12"
-                            Visibility="{x:Bind VM.CanDefineSelectedTag, Mode=OneWay, Converter={StaticResource BoolToVis}}">
-                    <FontIcon Glyph="&#xE9F9;"
-                              FontSize="28"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <TextBlock Style="{StaticResource EditorSectionTitleStyle}">
-                        <Run Text="标签 "/>
-                        <Run Text="{x:Bind VM.SelectedTagKey, Mode=OneWay}"
-                             FontWeight="Bold"/>
-                        <Run Text=" 尚未定义"/>
-                    </TextBlock>
-                    <TextBlock Text="此标签被图片引用，但未在标签定义中创建条目。"
-                               Style="{StaticResource EditorPageDescriptionStyle}"/>
-                    <Button Content="定义此标签"
-                            Command="{x:Bind VM.DefineSelectedTagCommand}"
-                            HorizontalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
         </Grid>
     </Grid>
 </Page>

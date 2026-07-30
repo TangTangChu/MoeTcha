@@ -38,6 +38,8 @@ public partial class EditorViewModel : ObservableObject
     public ObservableCollection<ClickImageDisplay> ClickImageDisplays { get; } = [];
     public ObservableCollection<TagUsageView> TagUsages { get; } = [];
     public ObservableCollection<TagUsageView> TagUsagesView { get; } = [];
+    public ObservableCollection<TaggedImageDisplay> SelectedTagGridImages { get; } = [];
+    public ObservableCollection<TaggedImageDisplay> SelectedTagClickImages { get; } = [];
     private readonly TagUsageIndex _tagIndex = new();
     public TagUsageIndex TagIndex => _tagIndex;
 
@@ -88,6 +90,9 @@ public partial class EditorViewModel : ObservableObject
     public bool CanChangePack => !IsBusy;
     public List<string> TagKeys => TagUsages.Where(t => t.IsDefined).Select(t => t.Key).ToList();
     public bool HasSelectedClickImage => SelectedClickImage != null;
+    public bool HasSelectedTagGridImages => SelectedTagGridImages.Count > 0;
+    public bool HasSelectedTagClickImages => SelectedTagClickImages.Count > 0;
+    public bool HasSelectedTagImages => HasSelectedTagGridImages || HasSelectedTagClickImages;
 
     public TagDefInfo? SelectedTagDef =>
         !string.IsNullOrEmpty(SelectedTagKey) && Pack.TagDefs.TryGetValue(SelectedTagKey, out var d) ? d : null;
@@ -128,6 +133,7 @@ public partial class EditorViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedTagDef));
         OnPropertyChanged(nameof(HasSelectedTag));
         OnPropertyChanged(nameof(CanDefineSelectedTag));
+        RebuildSelectedTagImages();
     }
 
     partial void OnShowUnusedOnlyChanged(bool value) => RebuildTagUsagesView();
@@ -666,6 +672,40 @@ public partial class EditorViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelectedTag));
         OnPropertyChanged(nameof(CanDefineSelectedTag));
         RebuildTagUsagesView();
+        RebuildSelectedTagImages();
+    }
+
+    /// <summary>根据当前选中的标签，重建「引用此标签的图片」缩略图列表。</summary>
+    private void RebuildSelectedTagImages()
+    {
+        SelectedTagGridImages.Clear();
+        SelectedTagClickImages.Clear();
+
+        var key = SelectedTagKey;
+        if (!string.IsNullOrEmpty(key))
+        {
+            var usage = _tagIndex.Get(key);
+            if (usage != null)
+            {
+                var dir = Pack.PackDirectory ?? "";
+                foreach (var file in usage.GridFiles)
+                {
+                    var source = Pack.GridImages.FirstOrDefault(g =>
+                        g != null && string.Equals(g.File, file, StringComparison.Ordinal));
+                    SelectedTagGridImages.Add(new TaggedImageDisplay(file, dir, TaggedImageKind.Grid, source));
+                }
+                foreach (var file in usage.ClickFiles)
+                {
+                    var source = Pack.ClickImages.FirstOrDefault(c =>
+                        c != null && string.Equals(c.File, file, StringComparison.Ordinal));
+                    SelectedTagClickImages.Add(new TaggedImageDisplay(file, dir, TaggedImageKind.Click, source));
+                }
+            }
+        }
+
+        OnPropertyChanged(nameof(HasSelectedTagGridImages));
+        OnPropertyChanged(nameof(HasSelectedTagClickImages));
+        OnPropertyChanged(nameof(HasSelectedTagImages));
     }
 
     private void RebuildTagUsagesView()
@@ -968,5 +1008,41 @@ public sealed class TagUsageView
         ClickCount = clickCount;
         SimilarCount = similarCount;
         IsUnused = isUnused;
+    }
+}
+
+public enum TaggedImageKind
+{
+    Grid,
+    Click,
+}
+
+/// <summary>「按标签查看图片」中单张图片的展示对象，加载缩略图并保留源对象以便后续跳转。</summary>
+public sealed class TaggedImageDisplay
+{
+    public string FileName { get; }
+    public string FullPath { get; }
+    public ImageSource? Thumbnail { get; }
+    public TaggedImageKind Kind { get; }
+    public object? Source { get; }
+
+    public TaggedImageDisplay(string fileName, string packDir, TaggedImageKind kind, object? source)
+    {
+        FileName = fileName;
+        Kind = kind;
+        Source = source;
+        FullPath = Path.Combine(packDir, Path.GetFileName(fileName));
+        if (File.Exists(FullPath))
+        {
+            try
+            {
+                Thumbnail = new BitmapImage
+                {
+                    CreateOptions = BitmapCreateOptions.IgnoreImageCache,
+                    UriSource = new Uri(Path.GetFullPath(FullPath)),
+                };
+            }
+            catch { }
+        }
     }
 }
