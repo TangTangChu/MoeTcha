@@ -6,6 +6,9 @@
 
 # Runtime data and generated artifacts
 /artifacts/
+
+# Data packs (user-supplied captcha materials, not source code)
+/data/packs/
 /tmp/
 /temp/
 *.db
