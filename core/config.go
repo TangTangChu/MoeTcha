@@ -2,14 +2,13 @@ package core
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
 	HTTPPort   string
+	LogLevel   string
 	Service    ServiceConfig
 	Storage    StorageConfig
 	SQLitePath string
@@ -41,66 +40,71 @@ type APIAuthConfig struct {
 	Tokens []string
 }
 
+// LoadOptions 控制配置加载行为。
+type LoadOptions struct {
+	// DotEnv 为 .env 文件解析结果，优先级低于真实环境变量。
+	DotEnv map[string]string
+	// Flags 为命令行覆盖（--set K=V），优先级最高。
+	Flags map[string]string
+	// Lenient 为真时即使存在解析错误也返回 nil error，
+	// 供 `config show` 在配置有错的情况下仍完整渲染。
+	Lenient bool
+	// Lookup 默认为 os.LookupEnv，测试可替换以保持 hermetic。
+	Lookup func(string) (string, bool)
+}
+
+// Load 依据配置注册表解析全部配置项。
+//
+// 与逐项解析不同，这里会把所有解析错误收集齐再一次性返回，
+// 避免运维改一个错一个地反复重启。出错项回落默认值后继续解析，
+// 因此返回的 Config 总是完整可用的。
+func Load(opts LoadOptions) (Config, []ResolvedValue, error) {
+	var cfg Config
+	for _, s := range configSpecs {
+		s.setDefault(&cfg)
+	}
+
+	r := &Resolver{DotEnv: opts.DotEnv, Flags: opts.Flags, Lookup: opts.Lookup}
+	resolved := make([]ResolvedValue, 0, len(configSpecs))
+	var errs ConfigErrors
+
+	for _, s := range configSpecs {
+		raw, src, found := r.lookup(s.Key)
+		if !found {
+			effective := s.read(&cfg)
+			resolved = append(resolved, ResolvedValue{
+				Spec: s, Value: s.Display(effective), Raw: effective, Source: SourceDefault,
+			})
+			continue
+		}
+
+		var applyErr error
+		if err := s.apply(&cfg, raw); err != nil {
+			// s.Display 保证密钥的坏值不会随错误信息进入日志。
+			ce := &ConfigError{Key: s.Key, Value: s.Display(raw), Source: src, Msg: err.Error()}
+			errs = append(errs, ce)
+			applyErr = ce
+		}
+		effective := s.read(&cfg)
+		resolved = append(resolved, ResolvedValue{
+			Spec: s, Value: s.Display(effective), Raw: effective, Source: src, Err: applyErr,
+		})
+	}
+
+	if len(errs) > 0 && !opts.Lenient {
+		return cfg, resolved, errs
+	}
+	return cfg, resolved, nil
+}
+
+// LoadConfig 从进程环境加载配置。
+//
+// 刻意不读取 .env 文件：Go 测试以包目录为工作目录，若在此自动加载，
+// core 包的测试会隐式依赖 core/.env 是否存在而失去 hermetic 性。
+// .env 的加载由 CLI 层显式完成。
 func LoadConfig() (Config, error) {
-	port := getEnv("HTTP_PORT", "8080")
-
-	diff := Difficulty(strings.ToLower(getEnv("CAPTCHA_DIFFICULTY", "easy")))
-	if diff != DiffEasy && diff != DiffMedium && diff != DiffHard {
-		return Config{}, fmt.Errorf("CAPTCHA_DIFFICULTY 必须为 easy / medium / hard，当前=%s", diff)
-	}
-
-	service := ServiceConfig{
-		TTL:         mustDuration("CAPTCHA_TTL", 2*time.Minute),
-		MaxAttempts: mustInt("CAPTCHA_MAX_ATTEMPTS", 3),
-		Difficulty:  diff,
-		IPPolicy: IPPolicy{
-			Enabled:      mustBool("CAPTCHA_IP_ENABLED", false),
-			RequireMatch: mustBool("CAPTCHA_IP_REQUIRE_MATCH", true),
-			MaxActive:    mustInt("CAPTCHA_IP_MAX_ACTIVE", 0),
-		},
-		Secure: SecurePolicy{
-			RequireUserAgent:     mustBool("CAPTCHA_REQUIRE_UA", false),
-			RequireSameUserAgent: mustBool("CAPTCHA_REQUIRE_SAME_UA", true),
-			DeleteOnFailed:       mustBool("CAPTCHA_DELETE_ON_FAILED", false),
-			MaxAttemptsPerIP:     mustInt("CAPTCHA_MAX_ATTEMPTS_IP", 0),
-			MaxAttemptsWindow:    mustDuration("CAPTCHA_MAX_ATTEMPTS_IP_WINDOW", 0),
-			MinVerifyInterval:    mustDuration("CAPTCHA_MIN_VERIFY_INTERVAL", 0),
-			MaxFailRatio:         mustFloat("CAPTCHA_MAX_FAIL_RATIO", 0),
-			FailRatioWindow:      mustDuration("CAPTCHA_FAIL_RATIO_WINDOW", 0),
-			Token: TokenPolicy{
-				Enabled:        mustBool("CAPTCHA_TOKEN_ENABLED", false),
-				TTL:            mustDuration("CAPTCHA_TOKEN_TTL", 90*time.Second),
-				SingleUse:      mustBool("CAPTCHA_TOKEN_SINGLE_USE", true),
-				BindIP:         mustBool("CAPTCHA_TOKEN_BIND_IP", true),
-				BindUserAgent:  mustBool("CAPTCHA_TOKEN_BIND_UA", true),
-				BindSession:    mustBool("CAPTCHA_TOKEN_BIND_SESSION", true),
-				BindIPPrefix:   mustInt("CAPTCHA_TOKEN_BIND_IP_PREFIX", 24),
-				SigningKey:     getEnv("CAPTCHA_TOKEN_SIGNING_KEY", ""),
-				SigningKeyNext: getEnv("CAPTCHA_TOKEN_SIGNING_KEY_NEXT", ""),
-				RotationGrace:  mustDuration("CAPTCHA_TOKEN_ROTATION_GRACE", 0),
-			},
-			RateLimit: RateLimitPolicy{
-				Enabled:    mustBool("CAPTCHA_RATE_LIMIT_ENABLED", false),
-				PerIPQPS:   mustInt("CAPTCHA_RATE_LIMIT_IP_QPS", 0),
-				PerIPBurst: mustInt("CAPTCHA_RATE_LIMIT_IP_BURST", 0),
-				PerUAQPS:   mustInt("CAPTCHA_RATE_LIMIT_UA_QPS", 0),
-				PerUABurst: mustInt("CAPTCHA_RATE_LIMIT_UA_BURST", 0),
-				BlockTTL:   mustDuration("CAPTCHA_RATE_LIMIT_BLOCK_TTL", 0),
-				SoftReject: mustBool("CAPTCHA_RATE_LIMIT_SOFT_REJECT", false),
-			},
-		},
-	}
-
-	storage := StorageConfig{
-		Backend: getEnv("STORAGE_BACKEND", "memory"),
-	}
-	sqlitePath := getEnv("SQLITE_PATH", "./data/moetcha.db")
-
-	service.APIAuth = APIAuthConfig{Tokens: parseTokenList(getEnv("API_TOKENS", ""))}
-	service.GridGenerateConcurrency = mustInt("GRID_GENERATE_CONCURRENCY", 0)
-	service.MaxSourceImagePixels = mustInt("MAX_SOURCE_IMAGE_PIXELS", 0)
-
-	return Config{HTTPPort: port, Service: service, Storage: storage, SQLitePath: sqlitePath}, nil
+	cfg, _, err := Load(LoadOptions{})
+	return cfg, err
 }
 
 func parseTokenList(raw string) []string {
@@ -119,62 +123,6 @@ func parseTokenList(raw string) []string {
 		return nil
 	}
 	return out
-}
-
-func getEnv(key, def string) string {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return def
-	}
-	return val
-}
-
-func mustBool(key string, def bool) bool {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return def
-	}
-	parsed, err := strconv.ParseBool(val)
-	if err != nil {
-		return def
-	}
-	return parsed
-}
-
-func mustInt(key string, def int) int {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return def
-	}
-	parsed, err := strconv.Atoi(val)
-	if err != nil {
-		return def
-	}
-	return parsed
-}
-
-func mustFloat(key string, def float64) float64 {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return def
-	}
-	parsed, err := strconv.ParseFloat(val, 64)
-	if err != nil {
-		return def
-	}
-	return parsed
-}
-
-func mustDuration(key string, def time.Duration) time.Duration {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return def
-	}
-	parsed, err := time.ParseDuration(val)
-	if err != nil {
-		return def
-	}
-	return parsed
 }
 
 func ValidateConfig(cfg Config) error {

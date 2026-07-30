@@ -1,0 +1,26 @@
+# 本地配置文件绝不能进镜像：Dockerfile 用 COPY . .，
+# 开发用 .env 一旦被烤进镜像即等同于随镜像分发密钥，
+# 且会让「环境变量优先」的排查预期落空。
+.env
+.env.*
+!.env.example
+
+# 版本库与构建产物
+.git
+.gitignore
+bin/
+artifacts/
+
+# 运行时数据（data/packs 由 compose 以卷挂载）
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# 本机构建产物与工具目录
+*.exe
+*.test
+.claude/
+.idea/
+.vs/
