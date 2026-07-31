@@ -99,46 +99,4 @@ public sealed partial class GridImagesPage : Page
         if (sender is Button { Tag: GridImageDisplay d })
             VM.DeleteGridImageCommand.Execute(d);
     }
-
-    private void TagBoxLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is AutoSuggestBox box)
-            box.ItemsSource = VM.TagKeys;
-    }
-
-    private string? _tagPrefixBeforeChoose;
-
-    private void TagBoxSuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
-    {
-        var text = sender.Text;
-        var lastComma = text.LastIndexOf(',');
-        _tagPrefixBeforeChoose = lastComma >= 0
-            ? text[..(lastComma + 1)] + " "
-            : "";
-    }
-
-    private void TagBoxTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
-    {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.SuggestionChosen
-            && _tagPrefixBeforeChoose != null)
-        {
-            sender.Text = _tagPrefixBeforeChoose + sender.Text + ", ";
-            _tagPrefixBeforeChoose = null;
-            return;
-        }
-
-        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
-
-        var query = sender.Text;
-        var lastComma = query.LastIndexOf(',');
-        var currentWord = lastComma >= 0
-            ? query[(lastComma + 1)..].TrimStart()
-            : query.TrimStart();
-
-        sender.ItemsSource = string.IsNullOrWhiteSpace(currentWord)
-            ? VM.TagKeys
-            : VM.TagKeys
-                .Where(k => k.Contains(currentWord, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-    }
 }

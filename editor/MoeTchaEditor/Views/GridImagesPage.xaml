@@ -3,9 +3,11 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:MoeTchaEditor.ViewModels"
-    xmlns:views="using:MoeTchaEditor.Views">
+    xmlns:views="using:MoeTchaEditor.Views"
+    xmlns:controls="using:MoeTchaEditor.Controls">
 
-    <Grid Background="Transparent">
+    <Grid x:Name="Root"
+          Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -39,7 +41,7 @@
                            Margin="20,18,12,20">
                 <ItemsRepeater.Layout>
                     <UniformGridLayout MinItemWidth="220"
-                                       MinItemHeight="340"
+                                       MinItemHeight="360"
                                        MinRowSpacing="14"
                                        MinColumnSpacing="14"
                                        Orientation="Horizontal"/>
@@ -70,12 +72,9 @@
                                        TextTrimming="CharacterEllipsis"
                                        ToolTipService.ToolTip="{x:Bind FileName}"/>
 
-                            <AutoSuggestBox Grid.Row="2"
-                                            Text="{x:Bind Source.TagsStr, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                            PlaceholderText="输入标签（选择建议自动追加）"
-                                            Loaded="TagBoxLoaded"
-                                            TextChanged="TagBoxTextChanged"
-                                            SuggestionChosen="TagBoxSuggestionChosen"/>
+                            <controls:TagEditor Grid.Row="2"
+                                                HorizontalAlignment="Stretch"
+                                                Tags="{x:Bind Source.Tags, Mode=TwoWay}"/>
 
                             <Grid Grid.Row="3"
                                   ColumnSpacing="8"

@@ -1,0 +1,101 @@
+<UserControl
+    x:Class="MoeTchaEditor.Controls.TagEditor"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MoeTchaEditor.Controls">
+
+    <Grid>
+        <!-- 统一 token 输入：chips 与输入框同处一个输入容器，流式换行；聚焦时容器呈输入态（描边转强调色） -->
+        <Border x:Name="RootBorder"
+                CornerRadius="6"
+                Padding="8,5"
+                BorderThickness="1"
+                BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                Background="{ThemeResource ControlFillColorDefaultBrush}"
+                PointerEntered="OnRootPointerEntered"
+                PointerExited="OnRootPointerExited"
+                PointerPressed="OnRootPointerPressed">
+            <controls:WrapPanel x:Name="ChipPanel" Spacing="4">
+                <TextBox x:Name="Input"
+                         MinWidth="140"
+                         MinHeight="30"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         Padding="6,3"
+                         FontSize="12"
+                         PlaceholderText="{x:Bind PlaceholderText, Mode=OneWay}"
+                         controls:WrapPanel.IsFill="True"
+                         GotFocus="OnInputGotFocus"
+                         LostFocus="OnInputLostFocus"
+                         TextChanged="OnInputTextChanged"
+                         KeyDown="OnInputKeyDown"/>
+            </controls:WrapPanel>
+        </Border>
+
+        <!-- 建议浮层：自绘 Popup + ListView，替代 AutoSuggestBox。
+             AutoSuggestBox 的弹层在 ItemsRepeater 虚拟化 + ScrollViewer 场景下经常丢失/无法弹出，
+             自绘 Popup 由本控件显式定位（随滚动重定位），行为可控。 -->
+        <Popup x:Name="SuggestionPopup"
+               IsLightDismissEnabled="True">
+            <Border x:Name="SuggestionSurface"
+                    CornerRadius="8"
+                    Padding="4"
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    Background="{ThemeResource SolidBackgroundFillColorSecondaryBrush}">
+                <Grid MinWidth="180">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ListView x:Name="SuggestionList"
+                              Grid.Row="0"
+                              MaxHeight="320"
+                              Background="Transparent"
+                              SelectionMode="Single"
+                              IsItemClickEnabled="True"
+                              IsTabStop="False"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollMode="Enabled"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              ItemClick="OnSuggestionItemClick">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                <Setter Property="MinHeight" Value="0"/>
+                                <Setter Property="MinWidth" Value="0"/>
+                                <Setter Property="Padding" Value="10,5"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Key}"
+                                               FontSize="13"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTipService.ToolTip="{Binding Key}"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Meta}"
+                                               FontSize="11"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               Visibility="{Binding HasMeta, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock x:Name="NoMatchHint"
+                               Grid.Row="1"
+                               FontSize="12"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Padding="10,8"
+                               Visibility="Collapsed"/>
+                </Grid>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

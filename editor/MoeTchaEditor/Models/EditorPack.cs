@@ -100,23 +100,6 @@ public class GridImageInfo : ObservableObject
         get => _tags;
         set => SetProperty(ref _tags, value ?? []);
     }
-
-    [JsonIgnore]
-    public string TagsStr
-    {
-        get => string.Join(", ", Tags);
-        set
-        {
-            var values = (value ?? "")
-                .Split(',')
-                .Select(part => part.Trim())
-                .Where(part => !string.IsNullOrEmpty(part))
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-            Tags = values;
-            OnPropertyChanged();
-        }
-    }
 }
 
 public class RegionInfo : ObservableObject
