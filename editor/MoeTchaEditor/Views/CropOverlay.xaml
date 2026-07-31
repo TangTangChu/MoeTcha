@@ -26,13 +26,13 @@
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
-                    <TextBlock Grid.Column="1" Text="拖动绿色方框移动取景区域"
+                    <TextBlock Grid.Column="1" Text="拖动方框移动取景，拖动边角调整大小，或滑动/滚轮缩放"
                                VerticalAlignment="Center" Style="{StaticResource EditorPageDescriptionStyle}"/>
                 </Grid>
 
-                <Border Grid.Row="1" Margin="20,0" Background="#FF181818"
+                <Border Grid.Row="1" Margin="20,0" Background="{ThemeResource ControlFillColorSecondaryBrush}"
                         BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                        BorderThickness="1">
+                        BorderThickness="1" CornerRadius="6">
                     <Grid>
                         <Image x:Name="Preview" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                                ImageOpened="OnImageOpened" ImageFailed="OnImageFailed"/>

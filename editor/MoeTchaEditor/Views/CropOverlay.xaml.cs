@@ -1,5 +1,6 @@
 using Microsoft.UI;
 using Microsoft.UI.Input;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -32,8 +33,18 @@ public sealed partial class CropOverlay : UserControl
     private const double EdgeThreshold = 12;
 
     private static readonly SolidColorBrush MaskBrush = new(Windows.UI.Color.FromArgb(0xA0, 0, 0, 0));
-    private static readonly SolidColorBrush FrameStroke = new(Colors.Lime);
-    private static readonly SolidColorBrush HandleFill = new(Windows.UI.Color.FromArgb(0xFF, 255, 255, 255));
+    private static readonly SolidColorBrush HandleFill = new(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+    private const double HandleSz = 9;
+
+    // 持久化绘制元素：Redraw 只更新位置/尺寸，避免每次 PointerMoved 重建元素造成的卡顿
+    private Rectangle? _maskTop, _maskBottom, _maskLeft, _maskRight;
+    private Rectangle? _frame;
+    private SolidColorBrush? _frameFill;
+    private Rectangle?[] _handles = new Rectangle?[4];
+    private Border? _chip;
+    private TextBlock? _chipText;
+    private bool _shapesReady;
+
     private TaskCompletionSource<string?> _tcs = CreateCompletionSource();
 
     private enum DragMode { None, Move, N, S, E, W, NW, NE, SW, SE }
@@ -61,6 +72,7 @@ public sealed partial class CropOverlay : UserControl
         CropFileName.Text = System.IO.Path.GetFileName(baseFileName);
         SizeLabel.Text = "";
         OverlayCanvas.Children.Clear();
+        _shapesReady = false;
 
         try
         {
@@ -283,71 +295,45 @@ public sealed partial class CropOverlay : UserControl
     private void ResizeFromCorner(double dx, double dy,
         bool fixedLeft = false, bool fixedTop = false, bool fixedRight = false, bool fixedBottom = false)
     {
-        int left, top, right, bottom;
+        // 以拖拽起点矩形为基准，按鼠标增量计算新的边长，
+        // 这样重新拖动时尺寸从当前大小连续变化，不会从 0 重置。
+        var startLeft = _dragStartX;
+        var startTop = _dragStartY;
+        var startRight = _dragStartX + _dragStartSize;
+        var startBottom = _dragStartY + _dragStartSize;
+        var startSize = _dragStartSize;
+        var idx = (int)Math.Round(dx);
+        var idy = (int)Math.Round(dy);
 
-        if (fixedLeft)
-            left = _dragStartX;
-        else
-            left = _dragStartX + _dragStartSize; // will be recalculated
-
-        if (fixedTop)
-            top = _dragStartY;
-        else
-            top = _dragStartY + _dragStartSize;
-
-        if (fixedRight)
-            right = _dragStartX + _dragStartSize;
-        else
-            right = _dragStartX + (int)Math.Round(dx);
-
-        if (fixedBottom)
-            bottom = _dragStartY + _dragStartSize;
-        else
-            bottom = _dragStartY + (int)Math.Round(dy);
-
-        // from the corner constraints, compute square
-        if (fixedLeft && fixedTop) // SE
+        int s, x, y;
+        if (fixedLeft && fixedTop) // SE：固定左上角
         {
-            var s = Math.Max(right - left, bottom - top);
-            s = Clamp(s, 1, Math.Min(_imgW - left, _imgH - top));
-            _cropSize = s;
-            _cropX = left;
-            _cropY = top;
+            s = Math.Max(startSize + idx, startSize + idy);
+            s = Clamp(s, 1, Math.Min(_imgW - startLeft, _imgH - startTop));
+            x = startLeft; y = startTop;
         }
-        else if (fixedLeft && fixedBottom) // NE
+        else if (fixedLeft && fixedBottom) // NE：固定左下角
         {
-            var s = Math.Max(right - left, _dragStartY + _dragStartSize - (top));
-            var newTop = Clamp(_dragStartY + _dragStartSize - s, 0, _imgH - 1);
-            s = Clamp(s, 1, Math.Min(_imgW - left, _imgH - newTop));
-            _cropSize = s;
-            _cropX = left;
-            _cropY = _dragStartY + _dragStartSize - s;
+            s = Math.Max(startSize + idx, startSize - idy);
+            s = Clamp(s, 1, Math.Min(_imgW - startLeft, startBottom));
+            x = startLeft; y = startBottom - s;
         }
-        else if (fixedRight && fixedTop) // SW
+        else if (fixedRight && fixedTop) // SW：固定右上角
         {
-            var s = Math.Max(right - (_dragStartX - _dragStartSize + (int)Math.Round(dx)), bottom - top);
-            // simplification: use dx from west side
-            var newLeft = _dragStartX + (int)Math.Round(dx);
-            s = Math.Max(_dragStartX + _dragStartSize - newLeft, bottom - top);
-            s = Clamp(s, 1, Math.Min(_imgW - newLeft, _imgH - top));
-            _cropSize = s;
-            _cropX = _dragStartX + _dragStartSize - s;
-            _cropY = top;
+            s = Math.Max(startSize - idx, startSize + idy);
+            s = Clamp(s, 1, Math.Min(startRight, _imgH - startTop));
+            x = startRight - s; y = startTop;
         }
-        else // NW — fixedRight && fixedBottom
+        else // NW：固定右下角
         {
-            var newLeft = _dragStartX + (int)Math.Round(dx);
-            var newTop = _dragStartY + (int)Math.Round(dy);
-            var s = Math.Max(_dragStartX + _dragStartSize - newLeft, _dragStartY + _dragStartSize - newTop);
-            s = Clamp(s, 1, Math.Min(_imgW, _imgH));
-            _cropSize = s;
-            _cropX = _dragStartX + _dragStartSize - s;
-            _cropY = _dragStartY + _dragStartSize - s;
+            s = Math.Max(startSize - idx, startSize - idy);
+            s = Clamp(s, 1, Math.Min(startRight, startBottom));
+            x = startRight - s; y = startBottom - s;
         }
 
-        // Clamp to image bounds
-        _cropX = Clamp(_cropX, 0, _imgW - _cropSize);
-        _cropY = Clamp(_cropY, 0, _imgH - _cropSize);
+        _cropSize = s;
+        _cropX = Clamp(x, 0, _imgW - s);
+        _cropY = Clamp(y, 0, _imgH - s);
     }
 
     private void SyncSlider()
@@ -475,8 +461,12 @@ public sealed partial class CropOverlay : UserControl
 
     private void Redraw()
     {
-        OverlayCanvas.Children.Clear();
-        if (_imgW <= 0 || _imgH <= 0 || _scale <= 0) return;
+        EnsureShapes();
+        if (_imgW <= 0 || _imgH <= 0 || _scale <= 0 || _frame == null)
+        {
+            HideShapes();
+            return;
+        }
 
         var cw = OverlayCanvas.ActualWidth;
         var ch = OverlayCanvas.ActualHeight;
@@ -485,48 +475,121 @@ public sealed partial class CropOverlay : UserControl
         var w = _cropSize * _scale;
         var h = _cropSize * _scale;
 
-        // masks
-        if (top > 0) AddMask(0, 0, cw, top);
-        if (top + h < ch) AddMask(0, top + h, cw, ch - top - h);
-        if (left > 0) AddMask(0, top, left, h);
-        if (left + w < cw) AddMask(left + w, top, cw - left - w, h);
+        // masks (dark scrim outside the crop square) - 仅更新位置/尺寸，不重建元素
+        PositionMask(_maskTop!, 0, 0, cw, top);
+        PositionMask(_maskBottom!, 0, top + h, cw, ch - top - h);
+        PositionMask(_maskLeft!, 0, top, left, h);
+        PositionMask(_maskRight!, left + w, top, cw - left - w, h);
 
         // frame
-        var rect = new Rectangle { Stroke = FrameStroke, StrokeThickness = 2, Width = w, Height = h };
-        Canvas.SetLeft(rect, left);
-        Canvas.SetTop(rect, top);
-        OverlayCanvas.Children.Add(rect);
+        _frame.Width = Math.Max(0, w);
+        _frame.Height = Math.Max(0, h);
+        Canvas.SetLeft(_frame, left);
+        Canvas.SetTop(_frame, top);
+        _frame.Visibility = Visibility.Visible;
+
+        // size chip at top-left
+        _chipText!.Text = $"{_cropSize}×{_cropSize}";
+        Canvas.SetLeft(_chip!, left);
+        Canvas.SetTop(_chip, Math.Max(2, top - 22));
+        _chip!.Visibility = Visibility.Visible;
 
         // corner handles
-        const double handleSz = 8;
-        AddHandle(left - handleSz / 2, top - handleSz / 2, handleSz);
-        AddHandle(left + w - handleSz / 2, top - handleSz / 2, handleSz);
-        AddHandle(left - handleSz / 2, top + h - handleSz / 2, handleSz);
-        AddHandle(left + w - handleSz / 2, top + h - handleSz / 2, handleSz);
+        SetHandle(_handles[0]!, left, top);
+        SetHandle(_handles[1]!, left + w, top);
+        SetHandle(_handles[2]!, left, top + h);
+        SetHandle(_handles[3]!, left + w, top + h);
     }
 
-    private void AddHandle(double x, double y, double sz)
+    private void EnsureShapes()
     {
-        var h = new Rectangle
+        if (_shapesReady) return;
+        var accent = AccentBrush();
+        _frameFill = new SolidColorBrush(Windows.UI.Color.FromArgb(0x22, accent.Color.R, accent.Color.G, accent.Color.B));
+
+        _maskTop = new Rectangle { Fill = MaskBrush };
+        _maskBottom = new Rectangle { Fill = MaskBrush };
+        _maskLeft = new Rectangle { Fill = MaskBrush };
+        _maskRight = new Rectangle { Fill = MaskBrush };
+
+        _frame = new Rectangle
         {
-            Fill = HandleFill,
-            Stroke = FrameStroke,
-            StrokeThickness = 1,
-            Width = sz,
-            Height = sz,
+            Stroke = accent,
+            StrokeThickness = 2,
+            Fill = _frameFill,
+            RadiusX = 6,
+            RadiusY = 6,
         };
-        Canvas.SetLeft(h, x);
-        Canvas.SetTop(h, y);
-        OverlayCanvas.Children.Add(h);
+
+        _handles = new Rectangle[4];
+        for (int i = 0; i < 4; i++)
+            _handles[i] = new Rectangle
+            {
+                Fill = HandleFill,
+                Stroke = accent,
+                StrokeThickness = 1.5,
+                RadiusX = 2,
+                RadiusY = 2,
+                Width = HandleSz,
+                Height = HandleSz,
+            };
+
+        _chipText = new TextBlock
+        {
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
+        };
+        _chip = new Border
+        {
+            Background = accent,
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(7, 2, 7, 2),
+            Child = _chipText,
+        };
+
+        foreach (var m in new[] { _maskTop, _maskBottom, _maskLeft, _maskRight })
+            OverlayCanvas.Children.Add(m);
+        OverlayCanvas.Children.Add(_frame);
+        foreach (var hd in _handles)
+            OverlayCanvas.Children.Add(hd);
+        OverlayCanvas.Children.Add(_chip);
+
+        _shapesReady = true;
     }
 
-    private void AddMask(double x, double y, double w, double h)
+    private static void PositionMask(Rectangle r, double x, double y, double w, double h)
     {
-        if (w <= 0 || h <= 0) return;
-        var r = new Rectangle { Fill = MaskBrush, Width = w, Height = h };
+        if (w <= 0 || h <= 0) { r.Visibility = Visibility.Collapsed; return; }
+        r.Width = w;
+        r.Height = h;
         Canvas.SetLeft(r, x);
         Canvas.SetTop(r, y);
-        OverlayCanvas.Children.Add(r);
+        r.Visibility = Visibility.Visible;
+    }
+
+    private void SetHandle(Rectangle r, double x, double y)
+    {
+        Canvas.SetLeft(r, x - HandleSz / 2);
+        Canvas.SetTop(r, y - HandleSz / 2);
+        r.Visibility = Visibility.Visible;
+    }
+
+    private void HideShapes()
+    {
+        foreach (var m in new[] { _maskTop, _maskBottom, _maskLeft, _maskRight })
+            if (m != null) m.Visibility = Visibility.Collapsed;
+        if (_frame != null) _frame.Visibility = Visibility.Collapsed;
+        if (_chip != null) _chip.Visibility = Visibility.Collapsed;
+        foreach (var hd in _handles)
+            if (hd != null) hd.Visibility = Visibility.Collapsed;
+    }
+
+    private SolidColorBrush AccentBrush()
+    {
+        if (Application.Current.Resources.TryGetValue("AccentFillColorDefaultBrush", out var o) && o is SolidColorBrush b)
+            return b;
+        return new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x00, 0x78, 0xD4));
     }
 
     private static int Clamp(int v, int min, int max) => v < min ? min : v > max ? max : v;
