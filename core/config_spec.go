@@ -231,6 +231,16 @@ var configSpecs = []Spec{
 		Desc: "日志级别", Enum: []string{"debug", "info", "warn", "error"},
 	}, func(c *Config) *string { return &c.LogLevel }),
 
+	// ── CORS 跨域 ──
+	specBool(Spec{
+		Key: "CORS_ENABLED", Section: "CORS 跨域", Default: "true",
+		Desc: "是否启用 CORS 跨域响应头（浏览器端调用必需）",
+	}, func(c *Config) *bool { return &c.CORS.Enabled }),
+	specList(Spec{
+		Key: "CORS_ALLOWED_ORIGINS", Section: "CORS 跨域", Default: "*",
+		Desc: "允许的跨域来源列表（逗号分隔），* 表示放行任意来源",
+	}, func(c *Config) *[]string { return &c.CORS.AllowedOrigins }),
+
 	// ── CAPTCHA 基础 ──
 	specDifficulty(Spec{
 		Key: "CAPTCHA_DIFFICULTY", Section: "CAPTCHA 基础", Default: "easy",

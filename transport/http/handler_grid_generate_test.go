@@ -63,7 +63,7 @@ func TestGridGenerateRouteReturnsTemporaryWebPAsset(t *testing.T) {
 		TTL:        time.Minute,
 		Difficulty: core.DiffEasy,
 	}
-	router := NewRouter(service, store, core.APIAuthConfig{})
+	router := NewRouter(service, store, RouterConfig{})
 
 	body := `{"tag":"猫","image_count":4,"correct_count":2,"rows":2,"columns":2,"tile_width":32,"tile_height":32,"gap":2,"padding":2,"apply_renderer":false,"seed":9}`
 	req := httptest.NewRequest("POST", "http://example.test/grid/generate", strings.NewReader(body))
@@ -73,10 +73,17 @@ func TestGridGenerateRouteReturnsTemporaryWebPAsset(t *testing.T) {
 	if resp.Code != 200 {
 		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
 	}
-	var result core.GridImageGenerateResult
-	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+	var envelope struct {
+		OK   bool                        `json:"ok"`
+		Data core.GridImageGenerateResult `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode response: %v; body=%s", err, resp.Body.String())
 	}
+	if !envelope.OK {
+		t.Fatalf("expected ok=true, body=%s", resp.Body.String())
+	}
+	result := envelope.Data
 	if result.ContentType != "image/webp" || result.AssetKey == "" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
@@ -158,7 +165,7 @@ func TestGridGenerateRequiresAPITokenWhenConfigured(t *testing.T) {
 		Difficulty: core.DiffEasy,
 	}
 	token := "test-secret-token-1234"
-	router := NewRouter(service, store, core.APIAuthConfig{Tokens: []string{token}})
+	router := NewRouter(service, store, RouterConfig{APIAuth: core.APIAuthConfig{Tokens: []string{token}}})
 
 	body := `{"tag":"猫","image_count":4,"correct_count":2,"rows":2,"columns":2,"tile_width":16,"tile_height":16,"apply_renderer":false,"seed":1}`
 

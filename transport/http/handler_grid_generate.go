@@ -1,7 +1,6 @@
 package http
 
 import (
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,35 +11,35 @@ import (
 
 func (r *Router) handleGridGenerate(c *gin.Context) {
 	if r.Service == nil || r.Assets == nil {
-		respondAPIError(c, http.StatusInternalServerError, "SERVICE_UNINITIALIZED", "service 或 asset store 未初始化")
+		respondErr(c, http.StatusInternalServerError, CodeServiceUninitialized, "service 或 asset store 未初始化")
 		return
 	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	var req core.GridImageGenerateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		respondAPIError(c, http.StatusBadRequest, "BAD_REQUEST", "请求 JSON 无效: "+err.Error())
+		respondErr(c, http.StatusBadRequest, CodeBadRequest, "请求 JSON 无效: "+err.Error())
 		return
 	}
 
 	result, err := r.Service.GenerateGridImage(req, core.VerifyContext{
 		IP:        clientIP(c),
 		UserAgent: c.GetHeader("User-Agent"),
+		RequestID: requestIDOf(c),
 	})
 	if err != nil {
 		status, code, msg := classifyGridError(err)
 		if status >= 500 {
-			rid, _ := c.Get("request_id")
-			slog.Error("grid_generate_failed", "request_id", rid, "error", err.Error(), "path", c.Request.URL.Path)
+			logInternalError(c, err)
 		}
-		respondAPIError(c, status, code, msg)
+		respondErr(c, status, code, msg)
 		return
 	}
 
 	assetPath := "/asset/" + url.PathEscape(result.AssetKey)
 	result.AssetURL = absoluteRequestURL(c, assetPath)
 	result.TemporaryFileURL = result.AssetURL
-	c.JSON(http.StatusOK, result)
+	respondOK(c, http.StatusOK, result)
 }
 
 func absoluteRequestURL(c *gin.Context, path string) string {

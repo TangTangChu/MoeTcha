@@ -71,8 +71,8 @@ func TestVerifyGrid(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := VerifyGrid(chal, tt.req)
-			if result.OK != tt.wantOK {
-				t.Errorf("OK = %v, want %v (reason: %s)", result.OK, tt.wantOK, result.Reason)
+			if result.Solved != tt.wantOK {
+				t.Errorf("Solved = %v, want %v (reason: %s)", result.Solved, tt.wantOK, result.Reason)
 			}
 			if result.Correct != tt.wantCor {
 				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)
@@ -86,12 +86,12 @@ func TestVerifyGrid(t *testing.T) {
 
 func TestVerifyGridNilChallenge(t *testing.T) {
 	result := VerifyGrid(nil, GridVerifyRequest{ImageIDs: []string{"a:cat1"}})
-	if result.OK {
+	if result.Solved {
 		t.Error("nil challenge should return not OK")
 	}
 
 	result = VerifyGrid(&ChallengeInternal{Type: ChallengeClick}, GridVerifyRequest{})
-	if result.OK {
+	if result.Solved {
 		t.Error("type mismatch should return not OK")
 	}
 }
@@ -162,8 +162,8 @@ func TestVerifyClick(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := VerifyClick(chal, tt.req)
-			if result.OK != tt.wantOK {
-				t.Errorf("OK = %v, want %v (reason: %s)", result.OK, tt.wantOK, result.Reason)
+			if result.Solved != tt.wantOK {
+				t.Errorf("Solved = %v, want %v (reason: %s)", result.Solved, tt.wantOK, result.Reason)
 			}
 			if result.Correct != tt.wantCor {
 				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)
@@ -177,7 +177,7 @@ func TestVerifyClick(t *testing.T) {
 
 func TestVerifyClickNilChallenge(t *testing.T) {
 	result := VerifyClick(nil, ClickVerifyRequest{Points: []ClickPoint{{X: 30, Y: 30}}})
-	if result.OK {
+	if result.Solved {
 		t.Error("nil challenge should return not OK")
 	}
 }
@@ -261,8 +261,8 @@ func TestVerifyClickWithCount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := VerifyClick(chal, tt.req)
-			if result.OK != tt.wantOK {
-				t.Errorf("OK = %v, want %v (reason: %s)", result.OK, tt.wantOK, result.Reason)
+			if result.Solved != tt.wantOK {
+				t.Errorf("Solved = %v, want %v (reason: %s)", result.Solved, tt.wantOK, result.Reason)
 			}
 			if result.Correct != tt.wantCor {
 				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -123,11 +124,17 @@ func serve(config core.Config) int {
 	// "Listening and serving" 行，交由下方自行打印干净的就绪信息。
 	// 请求日志由 LoggingMiddleware 独立记录，不受此开关影响。
 	httptransport.SetReleaseMode()
-	router := httptransport.NewRouter(service, assetStore, config.Service.APIAuth)
+	router := httptransport.NewRouter(service, assetStore, httptransport.RouterConfig{
+		APIAuth: config.Service.APIAuth,
+		CORS:    config.CORS,
+	})
 
 	fmt.Printf("难度：%s\n", config.Service.Difficulty)
 	if len(config.Service.APIAuth.Tokens) == 0 {
 		fmt.Fprintln(os.Stderr, errStyle.yellow("警告：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）"))
+	}
+	if config.CORS.Enabled && corsAllowsAll(config.CORS.AllowedOrigins) {
+		fmt.Fprintln(os.Stderr, errStyle.yellow("警告：CORS_ALLOWED_ORIGINS=* 放行任意来源，生产环境请改为具体域名"))
 	}
 	fmt.Printf("%s 服务已就绪  ->  http://localhost:%s   （按 Ctrl+C 退出）\n",
 		outStyle.green("✓"), config.HTTPPort)
@@ -188,6 +195,15 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 		}
 	})
 	return seen
+}
+
+func corsAllowsAll(origins []string) bool {
+	for _, o := range origins {
+		if strings.TrimSpace(o) == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func withOverride(m map[string]string, key, value string) map[string]string {

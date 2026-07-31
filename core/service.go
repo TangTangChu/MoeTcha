@@ -83,12 +83,13 @@ type Renderer struct {
 }
 
 type ChallengeResponse struct {
-	SessionID string                `json:"session_id"`
-	Type      ChallengeType         `json:"type"`
-	Question  string                `json:"question"`
-	Grid      *GridChallengePublic  `json:"grid,omitempty"`
-	Click     *ClickChallengePublic `json:"click,omitempty"`
-	Token     string                `json:"token,omitempty"`
+	SessionID  string                 `json:"session_id"`
+	Type       ChallengeType          `json:"type"`
+	Question   string                 `json:"question"`
+	ExpiresAt  string                 `json:"expires_at"`
+	Grid       *GridChallengePublic   `json:"grid,omitempty"`
+	Click      *ClickChallengePublic  `json:"click,omitempty"`
+	Token      string                 `json:"token,omitempty"`
 }
 
 type GridChallengePublic struct {
@@ -179,6 +180,7 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 	resp.SessionID = sessionID
 	resp.Type = chal.Type
 	resp.Question = chal.Question
+	resp.ExpiresAt = exp.Format(time.RFC3339)
 	MetricsInstance.ChallengesGenerated.Add(1)
 	slog.Info("challenge_created", "session_id", sessionID, "type", chal.Type, "tag", chal.Tag)
 	return resp, nil
@@ -314,47 +316,51 @@ func (s *Service) checkRateLimit(ctx VerifyContext) error {
 	return nil
 }
 
+// Verify 处理一次校验请求。
+// 返回 (VerifyResult, nil) 表示请求已被正常判定，result.Solved 表示通过与否。
+// 返回 (_, *VerifyError) 表示请求级失败（会话过期、限流、绑定校验不过等），
+// 此时根本没进入判定，handler 据错误码映射 HTTP 状态码。
 func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *ClickVerifyRequest, ctx VerifyContext) (VerifyResult, error) {
 	if sessionID == "" {
-		return VerifyResult{OK: false, Reason: "session_id 为空"}, nil
+		return VerifyResult{}, NewVerifyError(CodeEmptySession, "session_id 为空")
 	}
 	ss, ok := s.SessionStore.IncrementAttempt(sessionID)
 	if !ok {
-		return VerifyResult{OK: false, Reason: "session 不存在或已过期"}, nil
+		return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
 	}
 
 	if s.Secure.MinVerifyInterval > 0 {
 		if ss.CreatedAt.Add(s.Secure.MinVerifyInterval).After(time.Now()) {
-			return VerifyResult{OK: false, Reason: "验证过快"}, nil
+			return VerifyResult{}, NewVerifyError(CodeTooFast, "验证过快，请稍后再试")
 		}
 	}
 
 	if s.IPPolicy.Enabled && s.IPPolicy.RequireMatch {
 		if ctx.IP == "" || ss.IP == "" || ctx.IP != ss.IP {
-			return VerifyResult{OK: false, Reason: "IP 不匹配"}, nil
+			return VerifyResult{}, NewVerifyError(CodeIPMismatch, "IP 与签发时不一致")
 		}
 	}
 
 	if s.Secure.RequireUserAgent || s.Secure.RequireSameUserAgent {
 		if ctx.UserAgent == "" || ss.UserAgent == "" {
-			return VerifyResult{OK: false, Reason: "缺少 User-Agent"}, nil
+			return VerifyResult{}, NewVerifyError(CodeMissingUA, "缺少 User-Agent")
 		}
 		if s.Secure.RequireSameUserAgent && ctx.UserAgent != ss.UserAgent {
-			return VerifyResult{OK: false, Reason: "User-Agent 不匹配"}, nil
+			return VerifyResult{}, NewVerifyError(CodeUAMismatch, "User-Agent 与签发时不一致")
 		}
 	}
 
 	if s.Secure.MaxAttemptsPerIP > 0 && s.Secure.MaxAttemptsWindow > 0 {
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			if !tracker.AllowAttempt(ctx.IP, s.Secure.MaxAttemptsPerIP, s.Secure.MaxAttemptsWindow) {
-				return VerifyResult{OK: false, Reason: "IP 尝试次数过多"}, nil
+				return VerifyResult{}, NewVerifyError(CodeTooManyAttempts, "IP 尝试次数过多")
 			}
 		}
 	}
 	if s.Secure.MaxFailRatio > 0 && s.Secure.FailRatioWindow > 0 {
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			if !tracker.AllowFailRatio(ctx.IP, s.Secure.MaxFailRatio, s.Secure.FailRatioWindow) {
-				return VerifyResult{OK: false, Reason: "失败率过高"}, nil
+				return VerifyResult{}, NewVerifyError(CodeHighFailRatio, "失败率过高")
 			}
 		}
 	}
@@ -362,7 +368,7 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 		if limiter, ok := s.SessionStore.(RateLimiter); ok {
 			if !limiter.Allow(ctx, s.Secure.RateLimit) {
 				if !s.Secure.RateLimit.SoftReject {
-					return VerifyResult{OK: false, Reason: "访问过于频繁"}, nil
+					return VerifyResult{}, NewVerifyError(CodeRateLimited, "访问过于频繁")
 				}
 			}
 		}
@@ -370,41 +376,42 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 	if s.Secure.Token.Enabled {
 		if verifier, ok := s.SessionStore.(TokenVerifier); ok {
 			if err := verifier.VerifyToken(sessionID, ctx, s.Secure.Token); err != nil {
-				return VerifyResult{OK: false, Reason: err.Error()}, nil
+				rid := ctx.RequestID
+				slog.Warn("token_verify_failed", "request_id", rid, "session_id", sessionID, "error", err.Error())
+				return VerifyResult{}, NewVerifyError(CodeTokenInvalid, "Token 无效或已过期")
 			}
 		}
 	}
 
 	chal := ss.Challenge
 	if chal == nil {
-		return VerifyResult{OK: false, Reason: "challenge 缺失"}, nil
+		return VerifyResult{}, NewVerifyError(CodeChallengeMissing, "challenge 缺失")
 	}
 
 	var result VerifyResult
 	switch chal.Type {
 	case ChallengeGrid:
 		if grid == nil {
-			return VerifyResult{OK: false, Reason: "缺少 grid 请求"}, nil
+			return VerifyResult{}, NewVerifyError(CodeMissingGrid, "缺少 grid 请求体")
 		}
 		result = VerifyGrid(chal, *grid)
 	case ChallengeClick:
 		if click == nil {
-			return VerifyResult{OK: false, Reason: "缺少 click 请求"}, nil
+			return VerifyResult{}, NewVerifyError(CodeMissingClick, "缺少 click 请求体")
 		}
 		result = VerifyClick(chal, *click)
 	default:
-		return VerifyResult{OK: false, Reason: "未知 challenge 类型"}, nil
+		return VerifyResult{}, NewVerifyError(CodeUnknownType, "未知 challenge 类型")
 	}
 
-	if result.OK {
+	if result.Solved {
 		_ = s.SessionStore.Delete(sessionID)
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			tracker.RecordOutcome(ctx.IP, true)
 		}
 		MetricsInstance.VerificationsOK.Add(1)
 		slog.Info("verify_ok", "session_id", sessionID, "correct", result.Correct, "total", result.Total)
-	}
-	if !result.OK {
+	} else {
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			tracker.RecordOutcome(ctx.IP, false)
 		}
@@ -412,7 +419,7 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 			_ = s.SessionStore.Delete(sessionID)
 		}
 		MetricsInstance.VerificationsFail.Add(1)
-		slog.Info("verify_fail", "session_id", sessionID, "reason", result.Reason)
+		slog.Info("verify_fail", "session_id", sessionID, "code", result.Code, "reason", result.Reason)
 	}
 
 	return result, nil
@@ -422,6 +429,7 @@ type VerifyContext struct {
 	IP        string
 	UserAgent string
 	Token     string
+	RequestID string
 }
 
 type IPSessionTracker interface {

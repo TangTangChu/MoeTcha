@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ type challengeRequest struct {
 
 func (r *Router) handleChallenge(c *gin.Context) {
 	if r.Service == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "service 未初始化"})
+		respondErr(c, http.StatusInternalServerError, CodeServiceUninitialized, "service 未初始化")
 		return
 	}
 
@@ -21,12 +22,29 @@ func (r *Router) handleChallenge(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 
 	kind := core.ChallengeType(req.Type)
-	ctx := core.VerifyContext{IP: clientIP(c), UserAgent: c.GetHeader("User-Agent")}
+	ctx := core.VerifyContext{IP: clientIP(c), UserAgent: c.GetHeader("User-Agent"), RequestID: requestIDOf(c)}
 	resp, err := r.Service.NewChallenge(kind, ctx)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		status, code, msg := classifyChallengeError(err)
+		if status >= 500 {
+			logInternalError(c, err)
+		}
+		respondErr(c, status, code, msg)
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	respondOK(c, http.StatusOK, resp)
+}
+
+// classifyChallengeError 区分限流（429）与普通请求错误（400），
+// 内部错误回落 500 但只回显通用信息。
+func classifyChallengeError(err error) (status int, code, message string) {
+	if errors.Is(err, core.ErrRateLimited) {
+		return http.StatusTooManyRequests, CodeRateLimited, "访问过于频繁"
+	}
+	var ve *core.VerifyError
+	if errors.As(err, &ve) {
+		return verifyErrorStatus(ve.Code), ve.Code, ve.Message
+	}
+	return http.StatusBadRequest, CodeBadRequest, err.Error()
 }

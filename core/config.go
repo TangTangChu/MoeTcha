@@ -12,10 +12,17 @@ type Config struct {
 	Service    ServiceConfig
 	Storage    StorageConfig
 	SQLitePath string
+	CORS       CORSConfig
 }
 
 type StorageConfig struct {
 	Backend string
+}
+
+// CORSConfig 控制跨域响应头与预检处理，供浏览器端调用方使用。
+type CORSConfig struct {
+	Enabled        bool
+	AllowedOrigins []string
 }
 
 type ServiceConfig struct {
