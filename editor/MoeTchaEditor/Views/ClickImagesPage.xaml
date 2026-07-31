@@ -3,7 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:MoeTchaEditor.Models"
-    xmlns:vm="using:MoeTchaEditor.ViewModels">
+    xmlns:vm="using:MoeTchaEditor.ViewModels"
+    xmlns:controls="using:MoeTchaEditor.Controls">
 
     <Grid Background="Transparent">
         <Grid.RowDefinitions>
@@ -95,7 +96,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- Region editing header -->
-                    <Grid Padding="24,12"
+                    <Grid Padding="24,10"
                           ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -107,8 +108,9 @@
                                 <Run Text="{Binding SelectedClickImage.FileName}"
                                      FontWeight="Bold"/>
                             </TextBlock>
-                            <TextBlock Text="在图片上拖拽鼠标画出矩形区域"
-                                       Style="{StaticResource EditorPageDescriptionStyle}"/>
+                            <TextBlock x:Name="ActiveTagHint"
+                                       Style="{StaticResource EditorPageDescriptionStyle}"
+                                       Visibility="Collapsed"/>
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Content="清除全部"
@@ -121,17 +123,21 @@
                     <Grid Grid.Row="1">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="260"/>
+                            <ColumnDefinition Width="300"/>
                         </Grid.ColumnDefinitions>
 
                         <!-- Image canvas -->
                         <Grid Margin="16"
                               MinHeight="260"
-                              Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                              Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                              BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                              BorderThickness="1"
+                              CornerRadius="4">
                             <Grid x:Name="RegionCanvas"
                                   Background="Transparent"
                                   SizeChanged="OnCanvasSizeChanged"
                                   PointerPressed="CanvasPressed"
+                                  PointerMoved="CanvasMoved"
                                   PointerReleased="CanvasReleased"
                                   PointerCanceled="CanvasPointerCanceled"
                                   PointerCaptureLost="CanvasPointerCanceled">
@@ -147,7 +153,7 @@
                             </Grid>
                         </Grid>
 
-                        <!-- Region list -->
+                        <!-- Tag-grouped region list -->
                         <Grid Grid.Column="1">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -159,56 +165,111 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="区域列表"
+                                <TextBlock Text="标签分组"
                                            Style="{StaticResource EditorSectionTitleStyle}"/>
                                 <TextBlock Grid.Column="1"
                                            VerticalAlignment="Center"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           Text="{Binding SelectedClickImage.Source.Regions.Count}"/>
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                    <Run Text="{x:Bind RegionCount, Mode=OneWay}"/>
+                                    <Run Text=" 个区域"/>
+                                </TextBlock>
                             </Grid>
 
                             <ScrollViewer Grid.Row="1"
-                                          VerticalScrollBarVisibility="Auto">
-                                <ItemsControl Margin="16,0,12,16"
-                                              ItemsSource="{Binding SelectedClickImage.Source.Regions}">
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollMode="Disabled"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          Padding="12,0,10,12">
+                                <ItemsControl ItemsSource="{x:Bind RegionGroups, Mode=OneWay}"
+                                              HorizontalContentAlignment="Stretch">
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="models:RegionInfo">
-                                            <Grid Padding="0,10"
-                                                  RowSpacing="8">
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
+                                        <DataTemplate x:DataType="vm:RegionGroup">
+                                            <Border Margin="0,0,0,8"
+                                                    CornerRadius="6"
+                                                    Padding="10,8"
+                                                    BorderThickness="1"
+                                                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                                <StackPanel Spacing="6">
+                                                    <!-- Group header: dot + tag + count + draw-target toggle -->
+                                                    <Grid ColumnSpacing="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Ellipse Width="10"
+                                                                 Height="10"
+                                                                 VerticalAlignment="Center"
+                                                                 Fill="{x:Bind Color, Mode=OneWay}"/>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{x:Bind DisplayTag, Mode=OneWay}"
+                                                                   FontWeight="SemiBold"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTipService.ToolTip="{x:Bind DisplayTag, Mode=OneWay}"/>
+                                                        <Border Grid.Column="2"
+                                                                CornerRadius="9"
+                                                                Padding="7,1"
+                                                                VerticalAlignment="Center"
+                                                                Background="{x:Bind Color, Mode=OneWay}">
+                                                            <TextBlock Text="{x:Bind Count, Mode=OneWay}"
+                                                                       FontSize="11"
+                                                                       Foreground="White"/>
+                                                        </Border>
+                                                        <ToggleButton Grid.Column="3"
+                                                                      Padding="6,1"
+                                                                      MinWidth="0"
+                                                                      FontSize="11"
+                                                                      IsChecked="{x:Bind IsActive, Mode=TwoWay}"
+                                                                      Click="ToggleActiveGroup"
+                                                                      ToolTipService.ToolTip="设为绘制目标：新建区域自动归入此标签"
+                                                                      Content="绘制"/>
+                                                    </Grid>
 
-                                                <Grid ColumnSpacing="8">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock VerticalAlignment="Center"
-                                                               FontSize="10"
-                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                                                        <Run Text="x "/><Run Text="{x:Bind X, Mode=OneTime}"/>
-                                                        <Run Text="  y "/><Run Text="{x:Bind Y, Mode=OneTime}"/>
-                                                        <Run Text="  w "/><Run Text="{x:Bind Width, Mode=OneTime}"/>
-                                                        <Run Text="  h "/><Run Text="{x:Bind Height, Mode=OneTime}"/>
-                                                    </TextBlock>
-                                                    <Button Grid.Column="1"
-                                                            Content="删除"
-                                                            Tag="{x:Bind}"
-                                                            Click="DeleteRegion"
-                                                            FontSize="11"
-                                                            Padding="8,3"
-                                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
-                                                </Grid>
-
-                                                <AutoSuggestBox Grid.Row="1"
-                                                         Text="{x:Bind Tag, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                         PlaceholderText="区域标签"
-                                                         FontSize="12"
-                                                         Loaded="RegionTagBoxLoaded"
-                                                         TextChanged="RegionTagBoxTextChanged"/>
-                                            </Grid>
+                                                    <!-- Region rows -->
+                                                    <ItemsControl ItemsSource="{x:Bind Rows}"
+                                                                  HorizontalContentAlignment="Stretch">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:RegionRow">
+                                                                <Grid ColumnSpacing="6"
+                                                                      Padding="3,3"
+                                                                      Tag="{x:Bind Source}"
+                                                                      Tapped="SelectRegion">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <Rectangle Width="3"
+                                                                               RadiusX="1.5"
+                                                                               RadiusY="1.5"
+                                                                               Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                                               Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
+                                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                                        <controls:TagEditor MaxTags="1"
+                                                                                            Tags="{x:Bind Tags, Mode=TwoWay}"
+                                                                                            PlaceholderText="标签"/>
+                                                                        <TextBlock Text="{x:Bind Coords, Mode=OneWay}"
+                                                                                   FontSize="10"
+                                                                                   FontFamily="Consolas"
+                                                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                                                    </StackPanel>
+                                                                    <Button Grid.Column="2"
+                                                                            Tag="{x:Bind Source}"
+                                                                            Click="DeleteRegion"
+                                                                            FontSize="11"
+                                                                            Padding="8,2"
+                                                                            MinWidth="0"
+                                                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                                                            Content="删"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

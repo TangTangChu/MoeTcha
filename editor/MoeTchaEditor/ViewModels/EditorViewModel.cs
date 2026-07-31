@@ -88,7 +88,13 @@ public partial class EditorViewModel : ObservableObject
     public bool HasPack => !string.IsNullOrWhiteSpace(Pack.PackDirectory);
     public bool CanSave => HasPack && !IsBusy;
     public bool CanChangePack => !IsBusy;
-    public List<string> TagKeys => TagUsages.Where(t => t.IsDefined).Select(t => t.Key).ToList();
+
+    /// <summary>已定义标签 key 的缓存（仅在 <see cref="RebuildTagIndex"/> 时重建）。
+    /// 旧实现每次访问都走 LINQ 重新分配 List，编辑器里每张图片的输入框 Loaded、每次按键都会读它，
+    /// 是显著的性能热点。这里改为返回缓存，零分配。</summary>
+    private IReadOnlyList<string> _tagKeysCache = new List<string>();
+
+    public IReadOnlyList<string> TagKeys => _tagKeysCache;
     public bool HasSelectedClickImage => SelectedClickImage != null;
     public bool HasSelectedTagGridImages => SelectedTagGridImages.Count > 0;
     public bool HasSelectedTagClickImages => SelectedTagClickImages.Count > 0;
@@ -391,6 +397,13 @@ public partial class EditorViewModel : ObservableObject
 
             RebindPackGraph();
             RefreshClickImages();
+            // 自动选中新导入的图片，便于立即在其上绘制区域
+            if (converted.Count > 0)
+            {
+                var newFile = converted[^1].FileName;
+                SelectedClickImage = ClickImageDisplays.FirstOrDefault(d =>
+                    string.Equals(d.Source.File, newFile, StringComparison.Ordinal));
+            }
             MarkDirty();
             Status = $"导入了 {converted.Count} 张 Click 图片（已转 WebP）";
         }
@@ -659,6 +672,14 @@ public partial class EditorViewModel : ObservableObject
         TagUsages.Clear();
         foreach (var u in _tagIndex.All)
             TagUsages.Add(new TagUsageView(u.Key, u.IsDefined, u.GridCount, u.ClickCount, u.SimilarCount, u.IsUnused));
+
+        // 刷新已定义标签 key 缓存，供各 TagEditor 的建议列表读取；按引用热度排序，常用的排前面
+        _tagKeysCache = TagUsages
+            .Where(t => t.IsDefined)
+            .OrderByDescending(t => t.GridCount + t.ClickCount + t.SimilarCount)
+            .ThenBy(t => t.Key, StringComparer.Ordinal)
+            .Select(t => t.Key)
+            .ToList();
 
         if (selectedKey != null)
         {
