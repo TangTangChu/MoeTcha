@@ -17,6 +17,23 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        UnhandledException += (_, e) =>
+        {
+            // 保留崩溃行为（不设 Handled），同时落盘异常现场便于定位
+            try
+            {
+                var log = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MoeTchaEditor", "crash.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+                File.AppendAllText(log,
+                    $"[{DateTime.Now:O}] {e.Exception}\n{e.Exception?.StackTrace}\n\n");
+            }
+            catch
+            {
+                // 日志写入失败不干扰崩溃流程
+            }
+        };
     }
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
