@@ -11,7 +11,14 @@ RUN go mod download
 
 COPY . .
 RUN go mod tidy
-RUN go build -tags=webp -o /app/bin/moetcha ./
+# 构建时注入版本信息：BuildDate 取构建时刻；VERSION/GIT_COMMIT 可由
+# docker build --build-arg 传入，默认 dev / none（.dockerignore 排除了 .git）。
+ARG VERSION=dev
+ARG GIT_COMMIT=none
+RUN BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) && \
+    go build -tags=webp \
+      -ldflags "-X moetcha/cli.Version=$VERSION -X moetcha/cli.GitCommit=$GIT_COMMIT -X moetcha/cli.BuildDate=$BUILD_DATE" \
+      -o /app/bin/moetcha ./
 
 EXPOSE 8080
 

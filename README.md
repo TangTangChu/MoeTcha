@@ -14,9 +14,12 @@ API文档是[这个](API.md)
 moetcha [serve] [选项]        启动服务（默认命令，裸跑等价于 serve）
 moetcha config init           生成 .env（交互向导，或 --preset dev|prod 非交互）
 moetcha config show           查看生效配置及其来源
+moetcha config get <KEY>      查看单个配置项（密钥默认脱敏，加 --show-secrets）
+moetcha config set <KEY=V>    写入单个配置项到 .env
 moetcha config validate       校验配置，有错以非零码退出
 moetcha config template       输出完整 .env 模板
-moetcha gen-key               生成随机密钥（不依赖 openssl）
+moetcha gen-key               生成随机密钥（--format env --name KEY 直接出环境变量行）
+moetcha version               显示版本与构建信息
 ```
 
 上手：
@@ -75,3 +78,21 @@ moetcha serve --set CAPTCHA_DIFFICULTY=hard --set CAPTCHA_TTL=30s
 ```bash
 moetcha config template --output .env.example
 ```
+
+### 启动与关闭
+
+`moetcha`（或 `moetcha serve`）启动后会打印就绪信息与监听地址，按 `Ctrl+C` 优雅关闭：先停止接收新连接并排空在途请求，再关闭 SQLite（落盘 checkpoint），不会丢数据。终端着色仅在交互式终端生效，重定向到文件/管道时自动退回纯文本。
+
+### 构建与版本信息
+
+`moetcha version` 会打印版本号、git 提交、构建时间、go 版本与目标平台。前三项由构建时 `-ldflags` 注入，不注入时分别回落 `dev` / `none` / `unknown`：
+
+```bash
+go build -tags=webp \
+  -ldflags "-X moetcha/cli.Version=$(git describe --tags 2>/dev/null || echo dev) \
+            -X moetcha/cli.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo none) \
+            -X moetcha/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o bin/moetcha ./
+```
+
+Docker 构建可用 `--build-arg VERSION=... --build-arg GIT_COMMIT=...` 覆盖（默认 `dev` / `none`，`BuildDate` 自动取构建时刻）。

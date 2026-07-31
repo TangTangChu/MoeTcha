@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"moetcha/core"
 	"moetcha/core/render"
@@ -114,15 +119,43 @@ func serve(config core.Config) int {
 		MaxSourcePixels: config.Service.MaxSourceImagePixels,
 	}
 
+	// ReleaseMode 抑制 gin 启动时那一串 [GIN-debug] 路由注册输出与
+	// "Listening and serving" 行，交由下方自行打印干净的就绪信息。
+	// 请求日志由 LoggingMiddleware 独立记录，不受此开关影响。
+	httptransport.SetReleaseMode()
+	router := httptransport.NewRouter(service, assetStore, config.Service.APIAuth)
+
 	fmt.Printf("难度：%s\n", config.Service.Difficulty)
 	if len(config.Service.APIAuth.Tokens) == 0 {
-		fmt.Println("警告：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）")
+		fmt.Fprintln(os.Stderr, errStyle.yellow("警告：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）"))
 	}
+	fmt.Printf("%s 服务已就绪  ->  http://localhost:%s   （按 Ctrl+C 退出）\n",
+		outStyle.green("✓"), config.HTTPPort)
 
-	router := httptransport.NewRouter(service, assetStore, config.Service.APIAuth)
-	if err := router.Engine.Run(":" + config.HTTPPort); err != nil {
-		fmt.Fprintf(os.Stderr, "HTTP 服务启动失败: %v\n", err)
-		return 1
+	// 捕获 Ctrl+C / SIGTERM 做优雅关闭：先 Shutdown 停止接收新连接并排空在途
+	// 请求，再让 serve() 正常返回——此时外层 defer sqliteStore.Close() 才会执行，
+	// SQLite 得以 checkpoint 落盘。直接被信号杀掉则这些 defer 不会跑。
+	srv := &http.Server{Addr: ":" + config.HTTPPort, Handler: router.Engine}
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-errCh:
+		// ListenAndServe 返回：要么启动失败（端口占用等），要么被 Shutdown 关闭。
+		if err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "%s HTTP 服务启动失败：%v\n", errStyle.red("✗"), err)
+			return 1
+		}
+	case <-sigCh:
+		fmt.Fprintf(os.Stderr, "\n%s 收到退出信号，正在关闭…\n", errStyle.yellow("•"))
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "%s 关闭超时：%v\n", errStyle.red("✗"), err)
+		}
 	}
 	return 0
 }

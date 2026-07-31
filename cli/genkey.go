@@ -14,8 +14,10 @@ import (
 func runGenKey(args []string) int {
 	fs := flag.NewFlagSet("gen-key", flag.ContinueOnError)
 	n := fs.Int("bytes", 32, "随机字节数（十六进制输出长度为其两倍）")
+	format := fs.String("format", "raw", "输出格式：raw（裸十六进制）或 env（NAME=十六进制，需配合 --name）")
+	name := fs.String("name", "", "配合 --format env 的变量名，如 CAPTCHA_TOKEN_SIGNING_KEY")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "用法：moetcha gen-key [--bytes 32]")
+		fmt.Fprintln(os.Stderr, "用法：moetcha gen-key [--bytes 32] [--format raw|env] [--name KEY]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -31,7 +33,20 @@ func runGenKey(args []string) int {
 		fmt.Fprintf(os.Stderr, "生成随机密钥失败：%v\n", err)
 		return 1
 	}
-	fmt.Println(key)
+
+	switch *format {
+	case "raw":
+		fmt.Println(key)
+	case "env":
+		if strings.TrimSpace(*name) == "" {
+			fmt.Fprintln(os.Stderr, "错误：--format env 需要配合 --name 指定变量名")
+			return 2
+		}
+		fmt.Printf("%s=%s\n", strings.TrimSpace(*name), key)
+	default:
+		fmt.Fprintf(os.Stderr, "错误：--format 必须为 raw 或 env，当前=%q\n", *format)
+		return 2
+	}
 	return 0
 }
 

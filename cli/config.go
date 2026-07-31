@@ -15,6 +15,8 @@ const configUsageText = `用法：moetcha config <子命令> [选项]
 子命令：
   init      生成 .env（交互向导，或用 --preset dev|prod 非交互生成）
   show      查看生效配置及其来源
+  get <KEY>       查看单个配置项（密钥默认脱敏，加 --show-secrets 明文）
+  set <KEY=VALUE> 写入单个配置项到 .env
   validate  校验配置，有错则以非零码退出
   template  输出完整 .env 模板到标准输出
 `
@@ -29,6 +31,10 @@ func runConfig(args []string) int {
 		return runConfigInit(args[1:])
 	case "show":
 		return runConfigShow(args[1:])
+	case "get":
+		return runConfigGet(args[1:])
+	case "set":
+		return runConfigSet(args[1:])
 	case "validate":
 		return runConfigValidate(args[1:])
 	case "template":
@@ -121,7 +127,7 @@ func printConfigTable(resolved []core.ResolvedValue, showSecrets bool) {
 		line := fmt.Sprintf("%s  %s  %s",
 			pad(rv.Spec.Key, keyW), pad(displayValue(rv, showSecrets), valW), rv.Source)
 		if rv.Err != nil {
-			line += "  ✗ " + rv.Err.Error()
+			line += "  " + outStyle.red("✗") + " " + rv.Err.Error()
 		}
 		fmt.Println(line)
 	}
@@ -253,7 +259,7 @@ func runConfigValidate(args []string) int {
 		return 1
 	}
 
-	fmt.Println("✓ 配置校验通过")
+	fmt.Printf("%s 配置校验通过\n", outStyle.green("✓"))
 	if len(cfg.Service.APIAuth.Tokens) == 0 {
 		fmt.Println("提示：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）")
 	}
@@ -276,7 +282,7 @@ func runConfigTemplate(args []string) int {
 		fmt.Fprintf(os.Stderr, "写入 %s 失败：%v\n", *output, err)
 		return 1
 	}
-	fmt.Printf("✓ 已写入 %s\n", *output)
+	fmt.Printf("%s 已写入 %s\n", outStyle.green("✓"), *output)
 	return 0
 }
 
@@ -315,10 +321,13 @@ func runConfigInit(args []string) int {
 		fmt.Fprintf(os.Stderr, "写入 %s 失败：%v\n", *output, err)
 		return 1
 	}
-	fmt.Printf("✓ 已写入 %s\n", *output)
+	fmt.Printf("%s 已写入 %s\n", outStyle.green("✓"), *output)
 	if overrides["CAPTCHA_TOKEN_SIGNING_KEY"] != "" || overrides["API_TOKENS"] != "" {
 		fmt.Println("该文件含密钥，请勿提交到版本库（.gitignore 已包含 .env）")
 	}
+	fmt.Println("下一步：")
+	fmt.Println("  moetcha config validate   # 复核配置")
+	fmt.Println("  moetcha                   # 启动服务")
 	return 0
 }
 
@@ -413,4 +422,172 @@ func defaultOf(key string) string {
 // coreSpecByKey 供 parseSetFlags 校验 --set 的键名。
 func coreSpecByKey(key string) (core.Spec, bool) {
 	return core.SpecByKey(strings.TrimSpace(key))
+}
+
+func runConfigGet(args []string) int {
+	flagArgs, rest := splitFlagsAndPositional(args, map[string]bool{"env-file": true, "set": true})
+	fs := flag.NewFlagSet("config get", flag.ContinueOnError)
+	envFile := fs.String("env-file", defaultEnvFile, "指定 .env 文件路径")
+	showSecrets := fs.Bool("show-secrets", false, "明文显示密钥（默认脱敏）")
+	var sets multiFlag
+	fs.Var(&sets, "set", "覆盖任意配置项，形如 KEY=VALUE，可重复")
+	if err := fs.Parse(flagArgs); err != nil {
+		return 2
+	}
+	if len(rest) != 1 {
+		fmt.Fprintln(os.Stderr, "用法：moetcha config get <KEY> [--env-file .env] [--show-secrets]")
+		return 2
+	}
+	key := strings.TrimSpace(rest[0])
+	if _, ok := coreSpecByKey(key); !ok {
+		fmt.Fprintf(os.Stderr, "错误：%s 不是已知配置项（用 moetcha config template 查看全部）\n", key)
+		return 2
+	}
+
+	overrides, err := parseSetFlags(sets)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "错误：%v\n", err)
+		return 2
+	}
+
+	// 宽松模式：即便其它项有错，也不影响读取这一项。
+	_, resolved, err := loadConfig(*envFile, flagWasSet(fs, "env-file"), overrides, true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 1
+	}
+	for _, rv := range resolved {
+		if rv.Spec.Key == key {
+			fmt.Println(displayValue(rv, *showSecrets))
+			return 0
+		}
+	}
+	// 注册表中的键一定会出现在 resolved 中；走到这里说明 key 被校验放过却未渲染。
+	fmt.Println("")
+	return 0
+}
+
+func runConfigSet(args []string) int {
+	flagArgs, rest := splitFlagsAndPositional(args, map[string]bool{"env-file": true})
+	fs := flag.NewFlagSet("config set", flag.ContinueOnError)
+	envFile := fs.String("env-file", defaultEnvFile, "指定 .env 文件路径")
+	if err := fs.Parse(flagArgs); err != nil {
+		return 2
+	}
+	if len(rest) != 1 {
+		fmt.Fprintln(os.Stderr, "用法：moetcha config set <KEY=VALUE> [--env-file .env]")
+		return 2
+	}
+	kv := rest[0]
+	eq := strings.IndexByte(kv, '=')
+	if eq <= 0 {
+		fmt.Fprintln(os.Stderr, "错误：需要 KEY=VALUE 形式")
+		return 2
+	}
+	key := strings.TrimSpace(kv[:eq])
+	value := kv[eq+1:]
+	spec, ok := coreSpecByKey(key)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "错误：%s 不是已知配置项（用 moetcha config template 查看全部）\n", key)
+		return 2
+	}
+
+	content, err := os.ReadFile(*envFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "读取 %s 失败：%v\n", *envFile, err)
+			return 1
+		}
+		content = nil // 文件不存在时按空文件处理，新建一条记录。
+	}
+
+	updated, existed := setEnvLine(content, key, value)
+
+	// 沿用既有文件权限；新建时用 0600（.env 可能含密钥）。
+	perm := os.FileMode(0o600)
+	if fi, err := os.Stat(*envFile); err == nil {
+		perm = fi.Mode().Perm()
+	}
+	if err := os.WriteFile(*envFile, updated, perm); err != nil {
+		fmt.Fprintf(os.Stderr, "写入 %s 失败：%v\n", *envFile, err)
+		return 1
+	}
+
+	shown := value
+	if spec.Secret {
+		shown = "****"
+	}
+	fmt.Printf("%s 已%s %s（%s=%s）\n", outStyle.green("✓"), verbSet(existed), *envFile, key, shown)
+	fmt.Println("提示：建议运行 moetcha config validate 复核")
+	return 0
+}
+
+func verbSet(existed bool) string {
+	if existed {
+		return "更新"
+	}
+	return "新增"
+}
+
+// setEnvLine 在 .env 内容里把 KEY 的值改成 value；键不存在则追加一行。
+// 返回改写后的完整内容，以及该键原本是否已存在。仅按行精确匹配 KEY=，
+// 不会把 FOO 误匹配到 FOO_BAR。
+func setEnvLine(content []byte, key, value string) ([]byte, bool) {
+	lines := strings.Split(string(content), "\n")
+	existed := false
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t\r")
+		if trimmed == "" || trimmed[0] == '#' {
+			continue
+		}
+		eq := strings.IndexByte(trimmed, '=')
+		if eq <= 0 {
+			continue
+		}
+		if strings.TrimSpace(trimmed[:eq]) == key {
+			lines[i] = key + "=" + value
+			existed = true
+			break
+		}
+	}
+	if !existed {
+		// 保留文件末尾原有的换行结构：若最后一行是空串（即文件以 \n 结尾），
+		// 把新行插到它前面，避免多出一个空行。
+		if n := len(lines); n > 0 && lines[n-1] == "" {
+			lines[n-1] = key + "=" + value
+			lines = append(lines, "")
+		} else {
+			lines = append(lines, key+"="+value)
+		}
+	}
+	return []byte(strings.Join(lines, "\n")), existed
+}
+
+// splitFlagsAndPositional 把参数拆成「标志部分」与「位置参数」。
+// Go 标准 flag 包遇到首个非标志参数即停止解析，无法支持 `config get KEY --env-file X`
+// 这种位置参数在前的自然写法；这里手工拆分后只把标志部分交给 flag.Parse。
+// valueFlags 列出会消费下一个参数作为取值的标志名（如 env-file）。
+func splitFlagsAndPositional(args []string, valueFlags map[string]bool) (flagArgs, positional []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(a, "-") {
+			positional = append(positional, a)
+			continue
+		}
+		flagArgs = append(flagArgs, a)
+		// --name=value / -n=value 自带取值，不吃下一个参数。
+		if strings.Contains(a, "=") {
+			continue
+		}
+		name := strings.TrimLeft(a, "-")
+		if valueFlags[name] && i+1 < len(args) {
+			i++
+			flagArgs = append(flagArgs, args[i])
+		}
+	}
+	return flagArgs, positional
 }

@@ -25,6 +25,12 @@ func NewRouter(service *core.Service, assets core.AssetStore, apiAuth core.APIAu
 	return router
 }
 
+// SetReleaseMode 切换 gin 为发布模式，抑制启动时那一串 [GIN-debug] 路由
+// 注册输出与 "Listening and serving" 行，交由调用方自行打印干净的就绪信息。
+func SetReleaseMode() {
+	gin.SetMode(gin.ReleaseMode)
+}
+
 func (r *Router) registerRoutes() {
 	r.Engine.GET("/challenge", r.handleChallenge)
 	r.Engine.POST("/verify", r.handleVerify)
