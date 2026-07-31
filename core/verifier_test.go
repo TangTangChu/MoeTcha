@@ -207,3 +207,89 @@ func TestPointInRegion(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyClickWithCount(t *testing.T) {
+	// 两个目标区域，但要求只点击 1 个。
+	chal := &ChallengeInternal{
+		Type: ChallengeClick,
+		Click: &ClickChallengeInternal{
+			Regions: []Region{
+				{Tag: "cat", X: 10, Y: 10, Width: 50, Height: 50},
+				{Tag: "cat", X: 100, Y: 20, Width: 40, Height: 40},
+			},
+			Required: 1,
+		},
+	}
+
+	tests := []struct {
+		name    string
+		req     ClickVerifyRequest
+		wantOK  bool
+		wantCor int
+		wantTot int
+	}{
+		{
+			name:    "点击正好 1 个",
+			req:     ClickVerifyRequest{Points: []ClickPoint{{X: 30, Y: 30}}},
+			wantOK:  true,
+			wantCor: 1,
+			wantTot: 1,
+		},
+		{
+			name:    "点击数量不足",
+			req:     ClickVerifyRequest{Points: []ClickPoint{}},
+			wantOK:  false,
+			wantCor: 0,
+			wantTot: 1,
+		},
+		{
+			name:    "点击数量过多",
+			req:     ClickVerifyRequest{Points: []ClickPoint{{X: 30, Y: 30}, {X: 120, Y: 40}}},
+			wantOK:  false,
+			wantCor: 2,
+			wantTot: 1,
+		},
+		{
+			name:    "重复点击同一区域",
+			req:     ClickVerifyRequest{Points: []ClickPoint{{X: 30, Y: 30}, {X: 35, Y: 35}}},
+			wantOK:  false,
+			wantCor: 1,
+			wantTot: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := VerifyClick(chal, tt.req)
+			if result.OK != tt.wantOK {
+				t.Errorf("OK = %v, want %v (reason: %s)", result.OK, tt.wantOK, result.Reason)
+			}
+			if result.Correct != tt.wantCor {
+				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)
+			}
+			if result.Total != tt.wantTot {
+				t.Errorf("Total = %d, want %d", result.Total, tt.wantTot)
+			}
+		})
+	}
+}
+
+func TestBuildClickQuestion(t *testing.T) {
+	tests := []struct {
+		tmpl   string
+		count  int
+		want   string
+	}{
+		{"请点击图中{count}「{tag}」", 0, "请点击图中所有「猫」"},
+		{"请点击图中{count}「{tag}」", 3, "请点击图中3个「猫」"},
+		{"请点击图中所有「{tag}」", 0, "请点击图中所有「猫」"},
+		{"请点击图中所有「{tag}」", 3, "请点击图中所有「猫」"},
+		{"", 2, "请点击图中2个「猫」"},
+	}
+	for _, tt := range tests {
+		got := buildClickQuestion(tt.tmpl, "猫", tt.count)
+		if got != tt.want {
+			t.Errorf("buildClickQuestion(%q,%d) = %q, want %q", tt.tmpl, tt.count, got, tt.want)
+		}
+	}
+}

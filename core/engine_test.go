@@ -276,3 +276,67 @@ func TestClickConfigForTag(t *testing.T) {
 		t.Errorf("ClickConfigForTag question = %q, want default", cfg.Question)
 	}
 }
+
+func buildClickCountIndexer(t *testing.T, count int) *Indexer {
+	t.Helper()
+	provider := &mockPackProvider{
+		packs: []Pack{
+			{
+				ID:       "scenes",
+				PackName: "场景测试包",
+				TagDefs:  map[string]TagDef{"猫": {Name: "猫"}},
+				Click: &ClickConfig{
+					Count: count,
+				},
+				ClickImages: []ClickImageMeta{
+					{
+						ID: "scene_01", File: "scene_01.webp", PackID: "scenes", Path: "/tmp/scene_01.webp",
+						Regions: []Region{
+							{Tag: "猫", X: 10, Y: 10, Width: 50, Height: 50},
+							{Tag: "猫", X: 100, Y: 20, Width: 40, Height: 40},
+						},
+					},
+				},
+			},
+		},
+	}
+	idx, err := NewIndexer(provider)
+	if err != nil {
+		t.Fatalf("NewIndexer failed: %v", err)
+	}
+	return idx
+}
+
+func TestGenerateClickChallengeCount(t *testing.T) {
+	cases := []struct {
+		name        string
+		count       int
+		wantReq     int
+		wantContain string
+	}{
+		{"count=1 取 1", 1, 1, "1个"},
+		{"count=2 取全部正好", 2, 2, "2个"},
+		{"count=0 退化为全部", 0, 2, "所有"},
+		{"count=5 超过可用退化为全部", 5, 2, "所有"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			idx := buildClickCountIndexer(t, c.count)
+			engine := NewEngine(idx)
+			chal, err := engine.GenerateClickChallenge()
+			if err != nil {
+				t.Fatalf("GenerateClickChallenge failed: %v", err)
+			}
+			if chal.Click == nil || chal.Click.Required != c.wantReq {
+				got := 0
+				if chal.Click != nil {
+					got = chal.Click.Required
+				}
+				t.Errorf("Required = %d, want %d", got, c.wantReq)
+			}
+			if !strings.Contains(chal.Question, c.wantContain) {
+				t.Errorf("Question = %q, want substring %q", chal.Question, c.wantContain)
+			}
+		})
+	}
+}

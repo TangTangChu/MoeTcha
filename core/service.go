@@ -101,7 +101,8 @@ type GridItemPublic struct {
 }
 
 type ClickChallengePublic struct {
-	Image ClickItemPublic `json:"image"`
+	Image    ClickItemPublic `json:"image"`
+	Required int             `json:"required,omitempty"` // 需点击的目标数量；0 表示全部
 }
 
 type ClickItemPublic struct {
@@ -469,7 +470,11 @@ func (s *Service) buildResponse(chal *ChallengeInternal, exp time.Time) (*Challe
 		if err != nil {
 			return nil, err
 		}
-		resp.Click = &ClickChallengePublic{Image: ClickItemPublic{ImageID: chal.Click.Image.ImageID, AssetKey: assetKey}}
+		required := chal.Click.Required
+		if required <= 0 {
+			required = len(chal.Click.Regions)
+		}
+		resp.Click = &ClickChallengePublic{Image: ClickItemPublic{ImageID: chal.Click.Image.ImageID, AssetKey: assetKey}, Required: required}
 		return resp, nil
 	}
 

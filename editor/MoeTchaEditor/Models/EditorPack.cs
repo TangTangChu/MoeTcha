@@ -67,7 +67,8 @@ public class GridConfigInfo : ObservableObject
 
 public class ClickConfigInfo : ObservableObject
 {
-    private string _question = "请点击图中所有「{tag}」";
+    private string _question = "请点击图中{count}「{tag}」";
+    private int _count;
 
     [JsonPropertyName("question")]
     public string Question
@@ -75,6 +76,10 @@ public class ClickConfigInfo : ObservableObject
         get => _question;
         set => SetProperty(ref _question, value ?? "");
     }
+
+    /// <summary>需点击的目标数量；0 表示点击全部匹配区域。</summary>
+    [JsonPropertyName("count")]
+    public int Count { get => _count; set => SetProperty(ref _count, value); }
 }
 
 public class GridImageInfo : ObservableObject

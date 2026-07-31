@@ -85,7 +85,13 @@
                 <TextBlock Text="Click 挑战"
                            Style="{StaticResource EditorSectionTitleStyle}"/>
 
-                <TextBox Header="问题模板 (question) · {tag} 会替换成标签显示名"
+                <NumberBox Header="需点击数量 (count) · 0 表示点击全部匹配区域"
+                           Value="{x:Bind VM.Pack.Click.Count, Mode=TwoWay}"
+                           Minimum="0"
+                           Maximum="99"
+                           SpinButtonPlacementMode="Compact"/>
+
+                <TextBox Header="问题模板 (question) · {tag} 替换为标签名，{count} 替换为数量"
                          Text="{x:Bind VM.Pack.Click.Question, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
             </StackPanel>
         </StackPanel>

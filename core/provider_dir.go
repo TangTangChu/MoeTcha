@@ -154,8 +154,12 @@ func validateGridConfig(packID string, g *GridConfig) error {
 }
 
 func validateClickConfig(packID string, c *ClickConfig) error {
-	_ = packID
-	_ = c
+	if c == nil {
+		return nil
+	}
+	if c.Count < 0 {
+		return fmt.Errorf("pack=%s click.count 不能为负数", packID)
+	}
 	return nil
 }
 

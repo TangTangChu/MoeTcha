@@ -75,24 +75,34 @@ func VerifyClick(chal *ChallengeInternal, req ClickVerifyRequest) VerifyResult {
 		return VerifyResult{OK: false, Reason: "挑战缺少区域"}
 	}
 
+	// Required 为 0（含旧数据）时退化为「点击全部」。
+	required := chal.Click.Required
+	if required <= 0 {
+		required = len(regions)
+	}
+
 	if len(req.Points) == 0 {
-		return VerifyResult{OK: false, Reason: "未提供点击点", Total: len(regions)}
+		return VerifyResult{OK: false, Reason: "未提供点击点", Total: required}
 	}
 
 	matched := make(map[int]struct{})
 	for _, p := range req.Points {
 		idx := hitRegionIndex(regions, p)
 		if idx < 0 {
-			return VerifyResult{OK: false, Reason: fmt.Sprintf("点击点不在目标区域 x=%d y=%d", p.X, p.Y), Total: len(regions)}
+			return VerifyResult{OK: false, Reason: fmt.Sprintf("点击点不在目标区域 x=%d y=%d", p.X, p.Y), Total: required}
 		}
 		matched[idx] = struct{}{}
 	}
 
-	if len(matched) != len(regions) {
-		return VerifyResult{OK: false, Reason: "未命中所有区域", Correct: len(matched), Total: len(regions)}
+	if len(req.Points) != required {
+		return VerifyResult{OK: false, Reason: "点击数量不匹配", Correct: len(matched), Total: required}
 	}
 
-	return VerifyResult{OK: true, Correct: len(matched), Total: len(regions)}
+	if len(matched) != len(req.Points) {
+		return VerifyResult{OK: false, Reason: "存在重复点击的区域", Correct: len(matched), Total: required}
+	}
+
+	return VerifyResult{OK: true, Correct: len(matched), Total: required}
 }
 
 func hitRegionIndex(regions []Region, p ClickPoint) int {

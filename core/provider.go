@@ -16,7 +16,8 @@ type GridConfig struct {
 
 // ClickConfig 点击挑战的 pack 级配置。
 type ClickConfig struct {
-	Question string `json:"question,omitempty"` // 问题模板，{tag} → 标签显示名
+	Question string `json:"question,omitempty"` // 问题模板，{tag} → 标签显示名，{count} → 需点击数量
+	Count    int    `json:"count,omitempty"`    // 需点击的目标数量；0 表示点击全部匹配区域
 }
 
 type GridImageMeta struct {
@@ -87,7 +88,7 @@ func defaultGridConfig() GridConfig {
 // defaultClickConfig 返回点击挑战默认配置。
 func defaultClickConfig() ClickConfig {
 	return ClickConfig{
-		Question: "请点击图中所有「{tag}」",
+		Question: "请点击图中{count}「{tag}」",
 	}
 }
 
@@ -117,6 +118,9 @@ func (p Pack) ResolvedClickConfig() ClickConfig {
 	if p.Click != nil {
 		if p.Click.Question != "" {
 			cfg.Question = p.Click.Question
+		}
+		if p.Click.Count > 0 {
+			cfg.Count = p.Click.Count
 		}
 	}
 	return cfg

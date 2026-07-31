@@ -53,6 +53,8 @@ curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" 
 curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" -d '{"session_id":"2f0c8e1b9a9c4e1f1a3b2c4d5e6f7788","token":"<signed-token>","type":"click","click":{"points":[{"x":120,"y":220},{"x":300,"y":260}]}}'
 ```
 
+Click 挑战的数量：题目返回的 `click.required` 表示需要点击的目标数量，`question` 也会通过 `{count}` 占位符给出提示（如「请点击图中3个「猫」」）。点击数必须正好等于 `required`，每个点需落在不同的目标区域内，点击区域外或重复点击同一区域均会失败。`required` 为 0（或省略）时表示需点击全部匹配区域。
+
 示例响应
 
 ```json

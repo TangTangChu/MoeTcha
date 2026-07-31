@@ -55,8 +55,9 @@ type GridItemInternal struct {
 }
 
 type ClickChallengeInternal struct {
-	Image   ClickItemInternal `json:"image"`
-	Regions []Region          `json:"regions"`
+	Image    ClickItemInternal `json:"image"`
+	Regions  []Region          `json:"regions"`
+	Required int               `json:"required,omitempty"` // 需点击的目标数量；0 视为全部（兼容旧数据）
 }
 
 type ClickItemInternal struct {
@@ -276,20 +277,53 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 		return nil, fmt.Errorf("Click 标签 %s 没有候选图片", tag)
 	}
 
-	img := candidates[rng.Intn(len(candidates))]
+	// matchingRegions 返回图片中标签匹配的区域。
+	matchingRegions := func(img ClickImageMeta) []Region {
+		out := make([]Region, 0, len(img.Regions))
+		for _, r := range img.Regions {
+			if r.Tag == tag {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
 
-	var regions []Region
-	for _, r := range img.Regions {
-		if r.Tag == tag {
-			regions = append(regions, r)
+	cfg := e.idx.ClickConfigForTag(tag)
+
+	// 配置了 Count 时优先选择匹配区域数 >= Count 的图片，避免题目数量与可见区域不符。
+	pool := candidates
+	if cfg.Count > 0 {
+		filtered := make([]ClickImageMeta, 0, len(candidates))
+		for _, c := range candidates {
+			if len(matchingRegions(c)) >= cfg.Count {
+				filtered = append(filtered, c)
+			}
+		}
+		if len(filtered) > 0 {
+			pool = filtered
 		}
 	}
+
+	img := pool[rng.Intn(len(pool))]
+
+	regions := matchingRegions(img)
 	if len(regions) == 0 {
 		return nil, fmt.Errorf("Click 图片中不存在目标 tag 的区域，tag=%s image=%s:%s", tag, img.PackID, img.ID)
 	}
 
-	cfg := e.idx.ClickConfigForTag(tag)
-	question := buildQuestion(cfg.Question, e.idx.TagDisplay(tag))
+	// 解析需点击数量：Count 在 (0, len(regions)] 时取 Count，否则退化为点击全部。
+	var required int
+	var countForQuestion int
+	switch {
+	case cfg.Count > 0 && cfg.Count <= len(regions):
+		required = cfg.Count
+		countForQuestion = cfg.Count
+	default:
+		required = len(regions)
+		countForQuestion = 0 // 0 -> "所有"
+	}
+
+	question := buildClickQuestion(cfg.Question, e.idx.TagDisplay(tag), countForQuestion)
 
 	return &ChallengeInternal{
 		Type:     ChallengeClick,
@@ -300,7 +334,8 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 				ImageID: img.PackID + ":" + img.ID,
 				Path:    img.Path,
 			},
-			Regions: regions,
+			Regions:  regions,
+			Required: required,
 		},
 	}, nil
 }
@@ -312,6 +347,20 @@ func buildQuestion(tmpl, display string) string {
 		tmpl = "请选出所有「{tag}」"
 	}
 	return strings.ReplaceAll(tmpl, "{tag}", display)
+}
+
+// buildClickQuestion 构造点击挑战的问题文案。
+// {count} 占位符：count<=0 替换为「所有」，否则替换为「N 个」。
+func buildClickQuestion(tmpl, display string, count int) string {
+	if tmpl == "" {
+		tmpl = "请点击图中{count}「{tag}」"
+	}
+	countStr := "所有"
+	if count > 0 {
+		countStr = fmt.Sprintf("%d个", count)
+	}
+	out := strings.ReplaceAll(tmpl, "{count}", countStr)
+	return strings.ReplaceAll(out, "{tag}", display)
 }
 
 func hasTag(tags []string, target string) bool {
