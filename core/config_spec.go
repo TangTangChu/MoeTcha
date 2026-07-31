@@ -114,6 +114,11 @@ func specInt(base Spec, sel func(*Config) *int) Spec {
 	return bindSpec(base, parseIntValue, strconv.Itoa, sel)
 }
 
+func specInt64(base Spec, sel func(*Config) *int64) Spec {
+	base.Kind = KindInt
+	return bindSpec(base, parseInt64Value, func(v int64) string { return strconv.FormatInt(v, 10) }, sel)
+}
+
 func specFloat(base Spec, sel func(*Config) *float64) Spec {
 	base.Kind = KindFloat
 	return bindSpec(base, parseFloatValue, formatFloat, sel)
@@ -171,6 +176,14 @@ func parseBoolValue(s string) (bool, error) {
 
 func parseIntValue(s string) (int, error) {
 	v, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("必须为整数")
+	}
+	return v, nil
+}
+
+func parseInt64Value(s string) (int64, error) {
+	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("必须为整数")
 	}
@@ -393,6 +406,24 @@ var configSpecs = []Spec{
 		Key: "MAX_SOURCE_IMAGE_PIXELS", Section: "接口鉴权与资源限制", Default: "0",
 		Desc: "单张源图解码后的像素数上限，超过则拒绝（防止内存放大）。0 表示默认 16000000",
 	}, func(c *Config) *int { return &c.Service.MaxSourceImagePixels }),
+
+	// ── 图像渲染 ──
+	specBool(Spec{
+		Key: "RENDER_NOISE_ENABLED", Section: "图像渲染", Default: "false",
+		Desc: "是否对验证码图片叠加随机噪声（抗 OCR）。默认关闭，产出干净高质量图；需要干扰时再开启",
+	}, func(c *Config) *bool { return &c.Render.NoiseEnabled }),
+	specFloat(Spec{
+		Key: "RENDER_NOISE_DENSITY", Section: "图像渲染", Default: "0.02",
+		Desc: "噪声密度（0~0.2），仅在 RENDER_NOISE_ENABLED=true 时生效。0 等同关闭",
+	}, func(c *Config) *float64 { return &c.Render.NoiseDensity }),
+	specInt64(Spec{
+		Key: "RENDER_NOISE_SEED", Section: "图像渲染", Default: "0",
+		Desc: "噪声随机种子，0 表示每张图随机（推荐）。非零值会产生固定噪声图样，仅用于调试/复现",
+	}, func(c *Config) *int64 { return &c.Render.NoiseSeed }),
+	specInt(Spec{
+		Key: "RENDER_QUALITY", Section: "图像渲染", Default: "80",
+		Desc: "/challenge 响应图的 WebP 编码质量（1~100）。0 表示默认 80。调高可提升清晰度但增大体积",
+	}, func(c *Config) *int { return &c.Render.Quality }),
 }
 
 // Specs 返回全部配置项定义，顺序稳定。

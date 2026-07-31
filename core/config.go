@@ -13,6 +13,17 @@ type Config struct {
 	Storage    StorageConfig
 	SQLitePath string
 	CORS       CORSConfig
+	Render     RenderConfig
+}
+
+// RenderConfig 控制验证码图片的渲染管线与编码质量。
+// NoiseEnabled 默认 false——默认产出干净的高质量图，需要抗 OCR 干扰时再显式开启。
+// Quality 仅作用于 /challenge 响应图（链路 A）；/grid/generate 的质量由请求体 quality 逐次指定。
+type RenderConfig struct {
+	NoiseEnabled bool
+	NoiseDensity float64
+	NoiseSeed    int64
+	Quality      int
 }
 
 type StorageConfig struct {
@@ -157,6 +168,14 @@ func ValidateConfig(cfg Config) error {
 		if len(t) < 8 {
 			return fmt.Errorf("API_TOKENS 第 %d 个 token 长度不足 8（建议使用高强度随机串）", i+1)
 		}
+	}
+	if cfg.Render.NoiseEnabled {
+		if cfg.Render.NoiseDensity < 0 || cfg.Render.NoiseDensity > 0.2 {
+			return fmt.Errorf("RENDER_NOISE_DENSITY 必须在 0~0.2")
+		}
+	}
+	if cfg.Render.Quality < 0 || cfg.Render.Quality > 100 {
+		return fmt.Errorf("RENDER_QUALITY 必须在 0~100（0 表示使用默认 80）")
 	}
 	return nil
 }

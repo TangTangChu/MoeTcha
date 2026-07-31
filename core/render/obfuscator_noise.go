@@ -17,6 +17,11 @@ func (n NoiseObfuscator) Apply(img image.Image) (image.Image, error) {
 	if img == nil {
 		return nil, nil
 	}
+	// Density<=0 表示关闭噪声：直接返回原图，不做任何改动。
+	// 这让 RENDER_NOISE_ENABLED=false（或 density=0）能真正产出干净的高质量图。
+	if n.Density <= 0 {
+		return img, nil
+	}
 
 	seed := n.Seed
 	if seed == 0 {
@@ -28,10 +33,8 @@ func (n NoiseObfuscator) Apply(img image.Image) (image.Image, error) {
 	out := image.NewRGBA(b)
 	draw.Draw(out, b, img, b.Min, draw.Src)
 
+	// 上限 0.2 防止密度过大导致图片不可辨认；下限已在上面以 no-op 处理。
 	density := n.Density
-	if density <= 0 {
-		density = 0.02
-	}
 	if density > 0.2 {
 		density = 0.2
 	}

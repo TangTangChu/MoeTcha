@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"moetcha/core"
-	"moetcha/core/render"
 	httptransport "moetcha/transport/http"
 )
 
@@ -103,9 +102,7 @@ func serve(config core.Config) int {
 		}
 	}()
 
-	renderer := &core.Renderer{
-		Pipeline: render.NewPipeline(render.NoiseObfuscator{Density: 0.02}),
-	}
+	renderer := core.NewRenderer(config.Render)
 	service := &core.Service{
 		Engine:          engine,
 		SessionStore:    sessionStore,
@@ -118,6 +115,7 @@ func serve(config core.Config) int {
 		Secure:          config.Service.Secure,
 		GridConcurrency: config.Service.GridGenerateConcurrency,
 		MaxSourcePixels: config.Service.MaxSourceImagePixels,
+		RenderQuality:   config.Render.Quality,
 	}
 
 	// ReleaseMode 抑制 gin 启动时那一串 [GIN-debug] 路由注册输出与

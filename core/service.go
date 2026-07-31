@@ -32,6 +32,7 @@ type Service struct {
 
 	GridConcurrency     int
 	MaxSourcePixels     int
+	RenderQuality       int
 	gridSem             chan struct{}
 	gridSemOnce         sync.Once
 }
@@ -80,6 +81,21 @@ type RateLimitPolicy struct {
 
 type Renderer struct {
 	Pipeline *render.Pipeline
+}
+
+// NewRenderer 依据渲染配置构造 Renderer。
+// NoiseEnabled=false 时返回空管线，Apply 为直通，产出干净高质量图；
+// 开启噪声时才装配 NoiseObfuscator。
+func NewRenderer(cfg RenderConfig) *Renderer {
+	if !cfg.NoiseEnabled || cfg.NoiseDensity <= 0 {
+		return &Renderer{Pipeline: render.NewPipeline()}
+	}
+	return &Renderer{
+		Pipeline: render.NewPipeline(render.NoiseObfuscator{
+			Density: cfg.NoiseDensity,
+			Seed:    cfg.NoiseSeed,
+		}),
+	}
 }
 
 type ChallengeResponse struct {
@@ -500,7 +516,7 @@ func (s *Service) renderAndStore(path string, exp time.Time) (string, error) {
 			return "", err
 		}
 	}
-	bytes, err := render.EncodeWebP(img, 80)
+	bytes, err := render.EncodeWebP(img, s.renderQuality())
 	if err != nil {
 		return "", err
 	}
@@ -541,6 +557,18 @@ func (s *Service) maxSourcePixels() int {
 		return s.MaxSourcePixels
 	}
 	return defaultMaxSourcePixels
+}
+
+// renderQuality 返回 /challenge 响应图的 WebP 编码质量。0 表示默认 80。
+func (s *Service) renderQuality() float32 {
+	q := s.RenderQuality
+	if q <= 0 {
+		q = 80
+	}
+	if q > 100 {
+		q = 100
+	}
+	return float32(q)
 }
 
 func imagePixels(img image.Image) int {
