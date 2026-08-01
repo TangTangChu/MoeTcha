@@ -13,8 +13,8 @@ type packConfig struct {
 }
 
 type Indexer struct {
-	gridImages   map[string]GridImageMeta
-	gridTagIndex map[string][]string
+	gridImages      map[string]GridImageMeta
+	gridTagIndex    map[string][]string
 	gridBareIDIndex map[string][]GridImageMeta
 
 	clickImages   map[string]ClickImageMeta
@@ -22,6 +22,7 @@ type Indexer struct {
 
 	tagDefs     map[string]TagDef // tag → 定义（跨 pack 合并，冲突时报错）
 	packConfigs map[string]packConfig
+	packCount   int
 }
 
 func NewIndexer(provider PackProvider) (*Indexer, error) {
@@ -29,15 +30,21 @@ func NewIndexer(provider PackProvider) (*Indexer, error) {
 	if err != nil {
 		return nil, err
 	}
+	return BuildIndexer(packs)
+}
 
+// BuildIndexer 从已加载的 packs 构建索引。与 NewIndexer 的区别是不再重新读取
+// 磁盘——serve 启动与控制台 reload 都先 LoadPacks 再 BuildIndexer，避免同一批
+// 素材被扫描两遍（DirectoryProvider 每次调用都会重新读盘）。
+func BuildIndexer(packs []Pack) (*Indexer, error) {
 	idx := &Indexer{
-		gridImages:       make(map[string]GridImageMeta),
-		gridTagIndex:     make(map[string][]string),
-		gridBareIDIndex:  make(map[string][]GridImageMeta),
-		clickImages:      make(map[string]ClickImageMeta),
-		clickTagIndex:    make(map[string][]string),
-		tagDefs:          make(map[string]TagDef),
-		packConfigs:      make(map[string]packConfig),
+		gridImages:      make(map[string]GridImageMeta),
+		gridTagIndex:    make(map[string][]string),
+		gridBareIDIndex: make(map[string][]GridImageMeta),
+		clickImages:     make(map[string]ClickImageMeta),
+		clickTagIndex:   make(map[string][]string),
+		tagDefs:         make(map[string]TagDef),
+		packConfigs:     make(map[string]packConfig),
 	}
 
 	if err := idx.BuildFromPacks(packs); err != nil {
@@ -48,6 +55,7 @@ func NewIndexer(provider PackProvider) (*Indexer, error) {
 }
 
 func (idx *Indexer) BuildFromPacks(packs []Pack) error {
+	idx.packCount = len(packs)
 	for _, pack := range packs {
 		packID := pack.ID
 		if packID == "" {
@@ -80,12 +88,12 @@ func (idx *Indexer) BuildFromPacks(packs []Pack) error {
 				return fmt.Errorf("Grid 图片全局ID冲突: %s", gid)
 			}
 
-		idx.gridImages[gid] = img
-		for _, tag := range img.Tags {
-			idx.gridTagIndex[tag] = append(idx.gridTagIndex[tag], gid)
+			idx.gridImages[gid] = img
+			for _, tag := range img.Tags {
+				idx.gridTagIndex[tag] = append(idx.gridTagIndex[tag], gid)
+			}
+			idx.gridBareIDIndex[img.ID] = append(idx.gridBareIDIndex[img.ID], img)
 		}
-		idx.gridBareIDIndex[img.ID] = append(idx.gridBareIDIndex[img.ID], img)
-	}
 
 		for _, img := range pack.ClickImages {
 			gid := globalImageID(packID, img.ID)
@@ -120,6 +128,25 @@ func mergeSimilar(a, b []string) []string {
 
 func globalImageID(packID, imageID string) string {
 	return packID + ":" + imageID
+}
+
+// IndexerCounts 索引规模快照，供启动信息与控制台 status / reload 展示。
+type IndexerCounts struct {
+	Packs       int
+	GridImages  int
+	GridTags    int
+	ClickImages int
+	ClickTags   int
+}
+
+func (idx *Indexer) Counts() IndexerCounts {
+	return IndexerCounts{
+		Packs:       idx.packCount,
+		GridImages:  len(idx.gridImages),
+		GridTags:    len(idx.gridTagIndex),
+		ClickImages: len(idx.clickImages),
+		ClickTags:   len(idx.clickTagIndex),
+	}
 }
 
 // --- tag 查询 ---

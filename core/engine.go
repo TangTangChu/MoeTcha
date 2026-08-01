@@ -6,15 +6,30 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 type Engine struct {
-	idx *Indexer
+	// idx 用原子指针承载：控制台 reload 命令会整体替换索引，在途请求仍持有
+	// 旧索引（它们已 Load 出指针），新请求立即看到新素材，无需加锁。
+	idx atomic.Pointer[Indexer]
 }
 
 func NewEngine(idx *Indexer) *Engine {
-	return &Engine{idx: idx}
+	e := &Engine{}
+	e.idx.Store(idx)
+	return e
+}
+
+// SetIndexer 运行期整体替换索引（serve 控制台的 reload 命令）。
+func (e *Engine) SetIndexer(idx *Indexer) {
+	e.idx.Store(idx)
+}
+
+// Indexer 返回当前生效的索引。
+func (e *Engine) Indexer() *Indexer {
+	return e.idx.Load()
 }
 
 // newRNG 构造一个请求级 *rand.Rand，混入 crypto 熵避免高并发下纳秒种子碰撞。
@@ -88,15 +103,15 @@ func (e *Engine) GenerateChallenge(kind ChallengeType, diff Difficulty) (*Challe
 
 func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, error) {
 	rng := e.newRNG()
-	tags := e.idx.GetAllGridTags()
+	tags := e.idx.Load().GetAllGridTags()
 	if len(tags) == 0 {
 		return nil, fmt.Errorf("没有可用的 Grid 标签")
 	}
 
 	tag := tags[rng.Intn(len(tags))]
-	cfg := e.idx.GridConfigForTag(tag)
+	cfg := e.idx.Load().GridConfigForTag(tag)
 
-	correctCandidates := e.idx.GetGridImagesByTag(tag)
+	correctCandidates := e.idx.Load().GetGridImagesByTag(tag)
 	if len(correctCandidates) == 0 {
 		return nil, fmt.Errorf("Grid 标签 %s 没有候选图片", tag)
 	}
@@ -110,7 +125,7 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 	}
 
 	correct := pickUniqueGrid(rng, correctCandidates, correctCount)
-	allGrid := e.idx.AllGridImages()
+	allGrid := e.idx.Load().AllGridImages()
 
 	distGoal := cfg.Size - correctCount
 	distractors := e.pickDistractorsWithRNG(rng, tag, distGoal, diff, allGrid)
@@ -185,7 +200,7 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 		correctIDs = append(correctIDs, opaque[img.PackID+":"+img.ID])
 	}
 
-	question := buildQuestion(cfg.Question, e.idx.TagDisplay(tag))
+	question := buildQuestion(cfg.Question, e.idx.Load().TagDisplay(tag))
 
 	return &ChallengeInternal{
 		Type:     ChallengeGrid,
@@ -215,7 +230,7 @@ func (cfg GridConfig) correctPickCount(rng *rand.Rand) int {
 
 // pickDistractorsWithRNG 按难度从全部 grid 图片中挑选干扰项。
 func (e *Engine) pickDistractorsWithRNG(rng *rand.Rand, tag string, need int, diff Difficulty, all []GridImageMeta) []GridImageMeta {
-	similarTags := e.idx.SimilarTags(tag)
+	similarTags := e.idx.Load().SimilarTags(tag)
 	similarSet := make(map[string]struct{}, len(similarTags))
 	for _, t := range similarTags {
 		similarSet[t] = struct{}{}
@@ -301,14 +316,14 @@ func hasAnyTag(tags []string, targetSet map[string]struct{}) bool {
 
 func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 	rng := e.newRNG()
-	tags := e.idx.GetAllClickTags()
+	tags := e.idx.Load().GetAllClickTags()
 	if len(tags) == 0 {
 		return nil, fmt.Errorf("没有可用的 Click 标签")
 	}
 
 	tag := tags[rng.Intn(len(tags))]
 
-	candidates := e.idx.GetClickImagesByTag(tag)
+	candidates := e.idx.Load().GetClickImagesByTag(tag)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("Click 标签 %s 没有候选图片", tag)
 	}
@@ -324,7 +339,7 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 		return out
 	}
 
-	cfg := e.idx.ClickConfigForTag(tag)
+	cfg := e.idx.Load().ClickConfigForTag(tag)
 
 	// 配置了 Count 时优先选择匹配区域数 >= Count 的图片，避免题目数量与可见区域不符。
 	pool := candidates
@@ -359,7 +374,7 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 		countForQuestion = 0 // 0 -> "所有"
 	}
 
-	question := buildClickQuestion(cfg.Question, e.idx.TagDisplay(tag), countForQuestion)
+	question := buildClickQuestion(cfg.Question, e.idx.Load().TagDisplay(tag), countForQuestion)
 
 	return &ChallengeInternal{
 		Type:     ChallengeClick,

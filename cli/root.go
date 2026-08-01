@@ -33,7 +33,14 @@ serve 选项：
   --env-file <路径>   指定 .env 文件（默认 .env，不存在则忽略）
   --port <端口>       覆盖 HTTP_PORT
   --log-level <级别>  覆盖 LOG_LEVEL（debug/info/warn/error）
+  --console <模式>    运行期控制台：auto（stdin 为终端时启用）/ on / off
   --set KEY=VALUE     覆盖任意配置项，可重复
+
+运行期命令（serve 运行中，控制台启用时输入）：
+  help / status / metrics / config [KEY] / reload / set LOG_LEVEL=debug / set CAPTCHA_DIFFICULTY=hard / quit
+
+环境变量：
+  MOETCHA_GLYPHS=nerd|unicode|ascii|auto   终端字形（Nerd Fonts / Unicode / 纯 ASCII），默认 auto
 
 config 子命令：
   init      生成 .env（交互向导，或用 --preset dev|prod 非交互生成）

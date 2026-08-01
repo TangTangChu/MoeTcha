@@ -118,7 +118,7 @@ func (p *prompter) askEnum(label string, allowed []string, def string) string {
 				return v
 			}
 		}
-		fmt.Fprintf(p.out, "  ✗ 请输入 %s 之一\n", strings.Join(allowed, " / "))
+		fmt.Fprintf(p.out, "  %s 请输入 %s 之一\n", glyphs.fail, strings.Join(allowed, " / "))
 	}
 }
 
@@ -144,7 +144,7 @@ func (p *prompter) askBool(label string, def bool) bool {
 		case "n", "no", "false", "0":
 			return false
 		}
-		fmt.Fprintln(p.out, "  ✗ 请输入 y 或 n")
+		fmt.Fprintf(p.out, "  %s 请输入 y 或 n\n", glyphs.fail)
 	}
 }
 

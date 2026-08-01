@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,65 @@ func buildTestIndexer(t *testing.T) *Indexer {
 		t.Fatalf("NewIndexer failed: %v", err)
 	}
 	return idx
+}
+
+// TestEngineSetIndexerReload 验证运行期热替换索引（serve 控制台 reload 的底层）：
+// 换索引后新请求只能看到新素材，旧索引的标签全部不可见。
+func TestEngineSetIndexerReload(t *testing.T) {
+	engine := NewEngine(buildTestIndexer(t))
+
+	chal, err := engine.GenerateGridChallenge(DiffEasy)
+	if err != nil {
+		t.Fatalf("初始生成失败: %v", err)
+	}
+	switch chal.Tag {
+	case "猫", "狗", "鸟":
+	default:
+		t.Fatalf("初始标签 = %q, 应为 animals 素材中的标签", chal.Tag)
+	}
+
+	plants := make([]GridImageMeta, 0, 11)
+	for i := 1; i <= 11; i++ {
+		id := fmt.Sprintf("leaf_%02d", i)
+		plants = append(plants, GridImageMeta{
+			ID:     id,
+			File:   id + ".webp",
+			Tags:   []string{"植物"},
+			PackID: "plants",
+			Path:   "/tmp/" + id + ".webp",
+		})
+	}
+	idx2, err := BuildIndexer([]Pack{{
+		ID:         "plants",
+		PackName:   "植物测试包",
+		TagDefs:    map[string]TagDef{"植物": {Name: "植物"}},
+		Grid:       &GridConfig{Size: 9, CorrectMin: 2, CorrectMax: 4},
+		GridImages: plants,
+	}})
+	if err != nil {
+		t.Fatalf("BuildIndexer: %v", err)
+	}
+
+	engine.SetIndexer(idx2)
+	if engine.Indexer() != idx2 {
+		t.Error("SetIndexer 后 Indexer() 应返回新索引")
+	}
+	if cts := idx2.Counts(); cts.Packs != 1 || cts.GridImages != 11 || cts.GridTags != 1 {
+		t.Errorf("Counts = %+v, want Packs=1 GridImages=11 GridTags=1", cts)
+	}
+
+	chal2, err := engine.GenerateGridChallenge(DiffEasy)
+	if err != nil {
+		t.Fatalf("换索引后生成失败: %v", err)
+	}
+	if chal2.Tag != "植物" {
+		t.Errorf("换索引后标签 = %q, want 植物", chal2.Tag)
+	}
+	for _, img := range chal2.Grid.Images {
+		if !strings.HasPrefix(img.Path, "/tmp/leaf_") {
+			t.Errorf("换索引后仍出现旧素材路径: %s", img.Path)
+		}
+	}
 }
 
 func TestGenerateGridChallenge(t *testing.T) {

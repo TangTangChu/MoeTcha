@@ -22,6 +22,7 @@ func runServe(args []string) int {
 	envFile := fs.String("env-file", defaultEnvFile, "指定 .env 文件路径")
 	port := fs.String("port", "", "覆盖 HTTP_PORT")
 	logLevel := fs.String("log-level", "", "覆盖 LOG_LEVEL")
+	consoleMode := fs.String("console", "auto", "运行期控制台：auto（stdin 为终端时启用）/ on（强制）/ off（关闭）")
 	var sets multiFlag
 	fs.Var(&sets, "set", "覆盖任意配置项，形如 KEY=VALUE，可重复")
 	fs.Usage = func() {
@@ -29,6 +30,12 @@ func runServe(args []string) int {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	switch *consoleMode {
+	case "auto", "on", "off":
+	default:
+		fmt.Fprintf(os.Stderr, "错误：--console 必须为 auto / on / off，当前=%q\n", *consoleMode)
 		return 2
 	}
 
@@ -40,7 +47,7 @@ func runServe(args []string) int {
 	overrides = withOverride(overrides, "HTTP_PORT", *port)
 	overrides = withOverride(overrides, "LOG_LEVEL", *logLevel)
 
-	cfg, _, err := loadConfig(*envFile, flagWasSet(fs, "env-file"), overrides, false)
+	cfg, resolved, err := loadConfig(*envFile, flagWasSet(fs, "env-file"), overrides, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 1
@@ -51,24 +58,23 @@ func runServe(args []string) int {
 	}
 
 	core.InitLogger(cfg.LogLevel)
-	return serve(cfg)
+	return serve(cfg, *consoleMode, resolved)
 }
 
-func serve(config core.Config) int {
+func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue) int {
 	provider := &core.DirectoryProvider{
 		BaseDir:      "./data/packs",
 		MetaFileName: "meta.json",
 		Strict:       true,
 	}
 
+	// 只扫一次磁盘：LoadPacks 之后直接 BuildIndexer，不再让 NewIndexer 重复读盘。
 	packs, err := provider.LoadPacks()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "加载 packs 失败：%v\n", err)
 		return 1
 	}
-	fmt.Printf("加载 pack 数量：%d\n", len(packs))
-
-	indexer, err := core.NewIndexer(provider)
+	indexer, err := core.BuildIndexer(packs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "构建索引失败：%v\n", err)
 		return 1
@@ -90,11 +96,9 @@ func serve(config core.Config) int {
 		sqliteStore = ss
 		sessionStore = ss
 		assetStore = core.NewSQLiteAssetStore(ss.DB())
-		fmt.Printf("存储后端：SQLite (%s)\n", config.SQLitePath)
 	default:
 		sessionStore = core.NewMemorySessionStore()
 		assetStore = core.NewMemoryAssetStore()
-		fmt.Println("存储后端：内存")
 	}
 	defer func() {
 		if sqliteStore != nil {
@@ -128,15 +132,38 @@ func serve(config core.Config) int {
 		CORS:    config.CORS,
 	})
 
-	fmt.Printf("难度：%s\n", config.Service.Difficulty)
+	// 控制台默认在 stdin 为终端时启用；docker run -i 等场景用 --console on 强制。
+	console := newConsole(engine, service, provider, config.HTTPPort, config.Storage.Backend, config.SQLitePath)
+	console.config = resolved
+	consoleEnabled := consoleMode == "on" || (consoleMode == "auto" && isInteractive())
+
+	cts := indexer.Counts()
+	storage := "内存"
+	if config.Storage.Backend == "sqlite" {
+		storage = "SQLite (" + config.SQLitePath + ")"
+	}
+	fmt.Printf("  %s %d 个（Grid %d 图 / %d 标签，Click %d 图 / %d 标签）\n",
+		pad("素材包", 6), len(packs), cts.GridImages, cts.GridTags, cts.ClickImages, cts.ClickTags)
+	fmt.Printf("  %s %s\n", pad("存储", 6), storage)
+	fmt.Printf("  %s %s\n", pad("难度", 6), config.Service.Difficulty)
+	fmt.Printf("  %s http://localhost:%s\n", pad("监听", 6), config.HTTPPort)
+	if consoleEnabled {
+		fmt.Printf("  %s 已启用\n", pad("控制台", 6))
+	} else {
+		fmt.Printf("  %s 未启用（--console on 可强制开启）\n", pad("控制台", 6))
+	}
 	if len(config.Service.APIAuth.Tokens) == 0 {
-		fmt.Fprintln(os.Stderr, errStyle.yellow("警告：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）"))
+		fmt.Fprintln(os.Stderr, "  "+errStyle.yellow("警告：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）"))
 	}
 	if config.CORS.Enabled && corsAllowsAll(config.CORS.AllowedOrigins) {
-		fmt.Fprintln(os.Stderr, errStyle.yellow("警告：CORS_ALLOWED_ORIGINS=* 放行任意来源，生产环境请改为具体域名"))
+		fmt.Fprintln(os.Stderr, "  "+errStyle.yellow("警告：CORS_ALLOWED_ORIGINS=* 放行任意来源，生产环境请改为具体域名"))
 	}
-	fmt.Printf("%s 服务已就绪  ->  http://localhost:%s   （按 Ctrl+C 退出）\n",
-		outStyle.green("✓"), config.HTTPPort)
+	ready := fmt.Sprintf("%s 服务已就绪  %s http://localhost:%s",
+		outStyle.green(glyphs.ok), glyphs.arrow, config.HTTPPort)
+	if consoleEnabled {
+		ready += "（输入 help 查看命令）"
+	}
+	fmt.Println(ready)
 
 	// 捕获 Ctrl+C / SIGTERM 做优雅关闭：先 Shutdown 停止接收新连接并排空在途
 	// 请求，再让 serve() 正常返回——此时外层 defer sqliteStore.Close() 才会执行，
@@ -145,23 +172,34 @@ func serve(config core.Config) int {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 
+	// 优雅关闭：信号与控制台 quit 共用同一条路径。Shutdown 返回后 ListenAndServe
+	// 以 ErrServerClosed 退出，主流程从 errCh 收到并正常收尾（defer 关 SQLite）。
+	shutdown := func(reason string) {
+		fmt.Fprintf(os.Stderr, "\n%s %s，正在关闭…\n", errStyle.yellow(glyphs.warn), reason)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "%s 关闭超时：%v\n", errStyle.red(glyphs.fail), err)
+		}
+	}
+	console.quit = func() { shutdown("收到控制台 quit 命令") }
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	if consoleEnabled {
+		go console.loop()
+	}
 
 	select {
 	case err := <-errCh:
 		// ListenAndServe 返回：要么启动失败（端口占用等），要么被 Shutdown 关闭。
 		if err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "%s HTTP 服务启动失败：%v\n", errStyle.red("✗"), err)
+			fmt.Fprintf(os.Stderr, "%s HTTP 服务启动失败：%v\n", errStyle.red(glyphs.fail), err)
 			return 1
 		}
 	case <-sigCh:
-		fmt.Fprintf(os.Stderr, "\n%s 收到退出信号，正在关闭…\n", errStyle.yellow("•"))
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "%s 关闭超时：%v\n", errStyle.red("✗"), err)
-		}
+		shutdown("收到退出信号")
 	}
 	return 0
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -74,7 +75,7 @@ func runConfigShow(args []string) int {
 
 	switch *format {
 	case "table":
-		printConfigTable(resolved, *showSecrets)
+		printConfigTable(os.Stdout, resolved, *showSecrets)
 	case "env":
 		printConfigEnv(resolved, *showSecrets)
 	case "json":
@@ -88,7 +89,7 @@ func runConfigShow(args []string) int {
 	}
 
 	if n := countBad(resolved); n > 0 {
-		fmt.Fprintf(os.Stderr, "\n发现 %d 项配置无法解析（上表已标注 ✗），这些项当前使用默认值。\n", n)
+		fmt.Fprintf(os.Stderr, "\n发现 %d 项配置无法解析（上表已标注 %s），这些项当前使用默认值。\n", n, glyphs.fail)
 		return 1
 	}
 	return 0
@@ -104,7 +105,9 @@ func displayValue(rv core.ResolvedValue, showSecrets bool) string {
 	return rv.Value
 }
 
-func printConfigTable(resolved []core.ResolvedValue, showSecrets bool) {
+// printConfigTable 渲染配置表到指定输出流：CLI 的 config show 写 stdout，
+// 运行期控制台的 config 命令写 stderr（带缩进前缀）。
+func printConfigTable(w io.Writer, resolved []core.ResolvedValue, showSecrets bool) {
 	const (
 		headKey    = "变量"
 		headValue  = "值"
@@ -121,15 +124,15 @@ func printConfigTable(resolved []core.ResolvedValue, showSecrets bool) {
 	for _, rv := range resolved {
 		if rv.Spec.Section != section {
 			section = rv.Spec.Section
-			fmt.Printf("\n# %s\n", section)
-			fmt.Printf("%s  %s  %s\n", pad(headKey, keyW), pad(headValue, valW), headSource)
+			fmt.Fprintf(w, "\n# %s\n", section)
+			fmt.Fprintf(w, "%s  %s  %s\n", pad(headKey, keyW), pad(headValue, valW), headSource)
 		}
 		line := fmt.Sprintf("%s  %s  %s",
 			pad(rv.Spec.Key, keyW), pad(displayValue(rv, showSecrets), valW), rv.Source)
 		if rv.Err != nil {
-			line += "  " + outStyle.red("✗") + " " + rv.Err.Error()
+			line += "  " + outStyle.red(glyphs.fail) + " " + rv.Err.Error()
 		}
-		fmt.Println(line)
+		fmt.Fprintln(w, line)
 	}
 }
 
@@ -259,7 +262,7 @@ func runConfigValidate(args []string) int {
 		return 1
 	}
 
-	fmt.Printf("%s 配置校验通过\n", outStyle.green("✓"))
+	fmt.Printf("%s 配置校验通过\n", outStyle.green(glyphs.ok))
 	if len(cfg.Service.APIAuth.Tokens) == 0 {
 		fmt.Println("提示：API_TOKENS 未配置，/grid/generate 处于开放模式（仅适合内网/本地开发）")
 	}
@@ -282,7 +285,7 @@ func runConfigTemplate(args []string) int {
 		fmt.Fprintf(os.Stderr, "写入 %s 失败：%v\n", *output, err)
 		return 1
 	}
-	fmt.Printf("%s 已写入 %s\n", outStyle.green("✓"), *output)
+	fmt.Printf("%s 已写入 %s\n", outStyle.green(glyphs.ok), *output)
 	return 0
 }
 
@@ -321,7 +324,7 @@ func runConfigInit(args []string) int {
 		fmt.Fprintf(os.Stderr, "写入 %s 失败：%v\n", *output, err)
 		return 1
 	}
-	fmt.Printf("%s 已写入 %s\n", outStyle.green("✓"), *output)
+	fmt.Printf("%s 已写入 %s\n", outStyle.green(glyphs.ok), *output)
 	if overrides["CAPTCHA_TOKEN_SIGNING_KEY"] != "" || overrides["API_TOKENS"] != "" {
 		fmt.Println("该文件含密钥，请勿提交到版本库（.gitignore 已包含 .env）")
 	}
@@ -390,7 +393,7 @@ func wizardOverrides() (map[string]string, error) {
 		}
 		out["CAPTCHA_TOKEN_ENABLED"] = "true"
 		out["CAPTCHA_TOKEN_SIGNING_KEY"] = key
-		p.notef("  → 已自动生成 CAPTCHA_TOKEN_SIGNING_KEY\n")
+		p.notef("  %s 已自动生成 CAPTCHA_TOKEN_SIGNING_KEY\n", glyphs.arrow)
 	}
 
 	if p.askBool("生成 API_TOKENS（保护 /grid/generate）？", true) {
@@ -399,7 +402,7 @@ func wizardOverrides() (map[string]string, error) {
 			return nil, err
 		}
 		out["API_TOKENS"] = token
-		p.notef("  → 已自动生成 API_TOKENS\n")
+		p.notef("  %s 已自动生成 API_TOKENS\n", glyphs.arrow)
 	}
 
 	if p.askBool("启用限流？", false) {
@@ -517,7 +520,7 @@ func runConfigSet(args []string) int {
 	if spec.Secret {
 		shown = "****"
 	}
-	fmt.Printf("%s 已%s %s（%s=%s）\n", outStyle.green("✓"), verbSet(existed), *envFile, key, shown)
+	fmt.Printf("%s 已%s %s（%s=%s）\n", outStyle.green(glyphs.ok), verbSet(existed), *envFile, key, shown)
 	fmt.Println("提示：建议运行 moetcha config validate 复核")
 	return 0
 }

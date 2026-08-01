@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"moetcha/core/render"
@@ -27,9 +28,10 @@ type Service struct {
 	Renderer     *Renderer
 	TTL          time.Duration
 	MaxAttempts  int
-	Difficulty   Difficulty
-	IPPolicy     IPPolicy
-	Secure       SecurePolicy
+	// Difficulty 初始难度；运行期可用 SetDifficulty 调整（控制台命令）。
+	Difficulty Difficulty
+	IPPolicy   IPPolicy
+	Secure     SecurePolicy
 
 	GridConcurrency int
 	MaxSourcePixels int
@@ -37,6 +39,23 @@ type Service struct {
 	GridWebPMethod  int
 	gridSem         chan struct{}
 	gridSemOnce     sync.Once
+
+	// diffAtomic 是运行期难度的原子槽：SetDifficulty 写入，difficulty() 优先读它，
+	// 未设置过（初始字段）时回落 Difficulty。
+	diffAtomic atomic.Pointer[Difficulty]
+}
+
+// CurrentDifficulty 返回当前生效的难度（运行期调整过则为新值，否则为初始值）。
+func (s *Service) CurrentDifficulty() Difficulty {
+	if p := s.diffAtomic.Load(); p != nil {
+		return *p
+	}
+	return s.Difficulty
+}
+
+// SetDifficulty 运行期调整验证码难度，立即对后续请求生效（serve 控制台命令）。
+func (s *Service) SetDifficulty(d Difficulty) {
+	s.diffAtomic.Store(&d)
 }
 
 type IPPolicy struct {
@@ -137,7 +156,7 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 		return nil, err
 	}
 
-	chal, err := s.Engine.GenerateChallenge(kind, s.Difficulty)
+	chal, err := s.Engine.GenerateChallenge(kind, s.CurrentDifficulty())
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +232,7 @@ func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyCont
 		return nil, err
 	}
 
-	plan, err := s.Engine.buildGridImagePlan(req, s.Difficulty)
+	plan, err := s.Engine.buildGridImagePlan(req, s.CurrentDifficulty())
 	if err != nil {
 		return nil, err
 	}

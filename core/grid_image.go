@@ -144,7 +144,7 @@ type gridImagePlan struct {
 }
 
 func (e *Engine) buildGridImagePlan(req GridImageGenerateRequest, defaultDifficulty Difficulty) (*gridImagePlan, error) {
-	if e == nil || e.idx == nil {
+	if e == nil || e.idx.Load() == nil {
 		return nil, fmt.Errorf("grid engine 未初始化")
 	}
 	if req.ImageCount < 0 || req.Size < 0 || req.CorrectCount < 0 {
@@ -200,14 +200,14 @@ func (e *Engine) buildGridImagePlan(req GridImageGenerateRequest, defaultDifficu
 		if len(explicitImages) > 0 {
 			return nil, gridImageRequestError("使用 image_ids 时必须提供 tag、correct_image_ids 或 correct_numbers")
 		}
-		tags := e.idx.GetAllGridTags()
+		tags := e.idx.Load().GetAllGridTags()
 		if len(tags) == 0 {
 			return nil, gridImageRequestError("没有可用的 Grid 标签")
 		}
 		tag = tags[rng.Intn(len(tags))]
 	}
 
-	cfg := e.idx.GridConfigForTag(tag)
+	cfg := e.idx.Load().GridConfigForTag(tag)
 	imageCount, err := resolveRequestedImageCount(req, cfg.Size, len(explicitImages))
 	if err != nil {
 		return nil, err
@@ -284,8 +284,8 @@ func (e *Engine) buildGridImagePlan(req GridImageGenerateRequest, defaultDifficu
 
 	return &gridImagePlan{
 		tag:                 tag,
-		tagDisplay:          e.idx.TagDisplay(tag),
-		question:            buildQuestion(cfg.Question, e.idx.TagDisplay(tag)),
+		tagDisplay:          e.idx.Load().TagDisplay(tag),
+		question:            buildQuestion(cfg.Question, e.idx.Load().TagDisplay(tag)),
 		difficulty:          difficulty,
 		seed:                seed,
 		tiles:               tiles,
@@ -344,7 +344,7 @@ func (e *Engine) selectGeneratedGridImages(
 		correct = append(correct, img)
 	}
 
-	correctCandidates := e.idx.GetGridImagesByTag(tag)
+	correctCandidates := e.idx.Load().GetGridImagesByTag(tag)
 	availableCorrect := filterUnselectedGridImages(correctCandidates, selected)
 	needCorrect := correctCount - len(correct)
 	if len(availableCorrect) < needCorrect {
@@ -382,7 +382,7 @@ func (e *Engine) selectGeneratedGridImages(
 		distractors = append(distractors, img)
 	}
 
-	availableAll := filterUnselectedGridImages(e.idx.AllGridImages(), selected)
+	availableAll := filterUnselectedGridImages(e.idx.Load().AllGridImages(), selected)
 	needDistractors := distractorCount - len(distractors)
 	pickedDistractors := e.pickDistractorsWithRNG(rng, tag, needDistractors, difficulty, availableAll)
 	if len(pickedDistractors) < needDistractors {
@@ -431,13 +431,13 @@ func (e *Engine) resolveGridImageIDs(ids []string) ([]GridImageMeta, error) {
 }
 
 func (e *Engine) resolveGridImageID(id string) (GridImageMeta, error) {
-	if img, ok := e.idx.GetGridImage(id); ok {
+	if img, ok := e.idx.Load().GetGridImage(id); ok {
 		return img, nil
 	}
 	if strings.Contains(id, ":") {
 		return GridImageMeta{}, gridImageRequestError("Grid 图片不存在: %s", id)
 	}
-	matches := e.idx.GetGridImagesByBareID(id)
+	matches := e.idx.Load().GetGridImagesByBareID(id)
 	if len(matches) == 0 {
 		return GridImageMeta{}, gridImageRequestError("Grid 图片不存在: %s", id)
 	}
