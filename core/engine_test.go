@@ -209,6 +209,52 @@ func TestGenerateChallengeExplicitType(t *testing.T) {
 	}
 }
 
+// TestGenerateGridChallengeFillsOnDistractorShortfall 构造一个“干扰图不足、必须靠增加正确图补齐”的场景：
+// 标签 T 有 5 张正确图、5 张干扰图，cfg.Size=9，CorrectMax=4。无论随机到哪个 correctCount，
+// 只有“增加 correctCount 到 4”才能凑足 9 张。旧实现（干扰不足时减少 correctCount）
+// 会确定性返回 6 张图（1 正确 + 5 干扰）；修复后应始终返回 9 张。
+func TestGenerateGridChallengeFillsOnDistractorShortfall(t *testing.T) {
+	provider := &mockPackProvider{
+		packs: []Pack{{
+			ID:       "p",
+			PackName: "shortfall test",
+			TagDefs:  map[string]TagDef{"T": {Name: "T"}, "D": {Name: "D"}},
+			Grid:     &GridConfig{Size: 9, CorrectMin: 2, CorrectMax: 4},
+			GridImages: []GridImageMeta{
+				{ID: "t1", File: "t1", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t1"},
+				{ID: "t2", File: "t2", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t2"},
+				{ID: "t3", File: "t3", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t3"},
+				{ID: "t4", File: "t4", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t4"},
+				{ID: "t5", File: "t5", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t5"},
+				{ID: "d1", File: "d1", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d1"},
+				{ID: "d2", File: "d2", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d2"},
+				{ID: "d3", File: "d3", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d3"},
+				{ID: "d4", File: "d4", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d4"},
+				{ID: "d5", File: "d5", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d5"},
+			},
+		}},
+	}
+	idx, err := NewIndexer(provider)
+	if err != nil {
+		t.Fatalf("NewIndexer: %v", err)
+	}
+	engine := NewEngine(idx)
+
+	// 多次运行覆盖所有 correctCount 随机取值；修复后每次都应是 9。
+	for run := 0; run < 20; run++ {
+		chal, err := engine.GenerateGridChallenge(DiffEasy)
+		if err != nil {
+			t.Fatalf("run %d: GenerateGridChallenge: %v", run, err)
+		}
+		if got := len(chal.Grid.Images); got != 9 {
+			t.Fatalf("run %d: images=%d, want 9 (distractor shortfall not filled)", run, got)
+		}
+		if got := len(chal.Grid.CorrectImageIDs); got < 2 || got > 4 {
+			t.Fatalf("run %d: correct=%d, want 2..4", run, got)
+		}
+	}
+}
+
 func TestGenerateChallengeInvalidType(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)
