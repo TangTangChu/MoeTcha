@@ -88,6 +88,9 @@ func CORSMiddleware(cfg core.CORSConfig) gin.HandlerFunc {
 
 		h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Token, X-Request-ID")
+		// X-Request-ID 由 RequestIDMiddleware 写入响应头，供客户端排查关联。
+		// 跨域浏览器默认只能读到“简单响应头”，必须显式暴露才能被 fetch 读取。
+		h.Set("Access-Control-Expose-Headers", "X-Request-ID")
 		h.Set("Access-Control-Max-Age", "600")
 
 		// 预检直接短路，避免命中下游 NoRoute 的 404。
