@@ -406,6 +406,10 @@ var configSpecs = []Spec{
 		Key: "MAX_SOURCE_IMAGE_PIXELS", Section: "接口鉴权与资源限制", Default: "0",
 		Desc: "单张源图解码后的像素数上限，超过则拒绝（防止内存放大）。0 表示默认 16000000",
 	}, func(c *Config) *int { return &c.Service.MaxSourceImagePixels }),
+	specInt(Spec{
+		Key: "GRID_WEBP_METHOD", Section: "接口鉴权与资源限制", Default: "0",
+		Desc: "/grid/generate 合成图的 libwebp effort（0=最快，6=最慢/质量最高）。0=自动：小图用 4、中图用 2、大图用 1，避免大网格编码耗时几秒",
+	}, func(c *Config) *int { return &c.Service.GridWebPMethod }),
 
 	// ── 图像渲染 ──
 	specBool(Spec{

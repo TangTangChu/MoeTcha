@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -30,11 +31,12 @@ type Service struct {
 	IPPolicy     IPPolicy
 	Secure       SecurePolicy
 
-	GridConcurrency     int
-	MaxSourcePixels     int
-	RenderQuality       int
-	gridSem             chan struct{}
-	gridSemOnce         sync.Once
+	GridConcurrency int
+	MaxSourcePixels int
+	RenderQuality   int
+	GridWebPMethod  int
+	gridSem         chan struct{}
+	gridSemOnce     sync.Once
 }
 
 type IPPolicy struct {
@@ -99,13 +101,13 @@ func NewRenderer(cfg RenderConfig) *Renderer {
 }
 
 type ChallengeResponse struct {
-	SessionID  string                 `json:"session_id"`
-	Type       ChallengeType          `json:"type"`
-	Question   string                 `json:"question"`
-	ExpiresAt  string                 `json:"expires_at"`
-	Grid       *GridChallengePublic   `json:"grid,omitempty"`
-	Click      *ClickChallengePublic  `json:"click,omitempty"`
-	Token      string                 `json:"token,omitempty"`
+	SessionID string                `json:"session_id"`
+	Type      ChallengeType         `json:"type"`
+	Question  string                `json:"question"`
+	ExpiresAt string                `json:"expires_at"`
+	Grid      *GridChallengePublic  `json:"grid,omitempty"`
+	Click     *ClickChallengePublic `json:"click,omitempty"`
+	Token     string                `json:"token,omitempty"`
 }
 
 type GridChallengePublic struct {
@@ -222,6 +224,8 @@ func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyCont
 
 	maxPixels := s.maxSourcePixels()
 	images := make([]image.Image, 0, len(plan.tiles))
+	// 源图只加载与大小校验；渲染/干扰管线放到合成后一次性应用，
+	// 避免对每张全分辨率源图跑一次噪声（合成后画布比所有源图总像素小得多）。
 	for _, tile := range plan.tiles {
 		img, err := render.LoadImage(tile.meta.Path)
 		if err != nil {
@@ -230,12 +234,6 @@ func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyCont
 		if px := imagePixels(img); px > maxPixels {
 			return nil, gridImageRequestError("源图 %s 像素数 %d 超过上限 %d", globalGridImageID(tile.meta), px, maxPixels)
 		}
-		if plan.applyRenderer && s.Renderer != nil && s.Renderer.Pipeline != nil {
-			img, err = s.Renderer.Pipeline.Apply(img)
-			if err != nil {
-				return nil, fmt.Errorf("处理 Grid 图片 %s 失败: %w", globalGridImageID(tile.meta), err)
-			}
-		}
 		images = append(images, img)
 	}
 
@@ -243,7 +241,15 @@ func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyCont
 	if err != nil {
 		return nil, fmt.Errorf("合成 Grid 图片失败: %w", err)
 	}
-	bytes, err := render.EncodeWebPStrict(composed, plan.quality)
+
+	if plan.applyRenderer && s.Renderer != nil && s.Renderer.Pipeline != nil {
+		if processed, perr := s.Renderer.Pipeline.Apply(composed); perr == nil && processed != nil {
+			composed = toRGBA(processed)
+		}
+	}
+
+	method := s.gridWebPMethod(composed.Bounds().Dx() * composed.Bounds().Dy())
+	bytes, err := render.EncodeWebPStrict(composed, plan.quality, method)
 	if err != nil {
 		return nil, fmt.Errorf("编码 Grid WebP 失败: %w", err)
 	}
@@ -569,6 +575,39 @@ func (s *Service) renderQuality() float32 {
 		q = 100
 	}
 	return float32(q)
+}
+
+// gridWebPMethod 返回 /grid/generate 的 libwebp effort 方法。
+// s.GridWebPMethod>0 时直接使用（钳制到 1~6）；0 表示按合成图像素数自动选档：
+// 小图用高质量档（4，反正快），中等图用平衡档（2），超大图用快速档（1），
+// 避免大网格在 method=4 下编码耗时几秒。
+func (s *Service) gridWebPMethod(pixels int) int {
+	m := s.GridWebPMethod
+	if m > 0 {
+		if m > 6 {
+			m = 6
+		}
+		return m
+	}
+	switch {
+	case pixels <= 250_000:
+		return 4
+	case pixels <= 4_000_000:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// toRGBA 将任意 image.Image 转为 *image.RGBA（合成后管线输出可能是非 RGBA）。
+func toRGBA(img image.Image) *image.RGBA {
+	if r, ok := img.(*image.RGBA); ok {
+		return r
+	}
+	b := img.Bounds()
+	out := image.NewRGBA(b)
+	draw.Draw(out, b, img, b.Min, draw.Src)
+	return out
 }
 
 func imagePixels(img image.Image) int {

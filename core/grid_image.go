@@ -675,10 +675,15 @@ func normalizeGridRenderOptions(
 	}
 	labelScale := req.LabelScale
 	if labelScale == 0 {
-		labelScale = 3
+		// 未显式指定时按 tile 尺寸自动缩放，避免大 tile 上编号过小。
+		tileMin := tileWidth
+		if tileHeight < tileMin {
+			tileMin = tileHeight
+		}
+		labelScale = autoLabelScale(tileMin)
 	}
-	if labelScale < 1 || labelScale > 16 {
-		return render.GridComposeOptions{}, 0, false, 0, gridImageRequestError("label_scale 必须在 1~16")
+	if labelScale < 1 || labelScale > 48 {
+		return render.GridComposeOptions{}, 0, false, 0, gridImageRequestError("label_scale 必须在 1~48（0=自动按 tile 尺寸）")
 	}
 	labelPosition := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(req.LabelPosition), "-", "_"))
 	if labelPosition == "" {
@@ -805,6 +810,23 @@ func parseGridColor(value string, fallback color.RGBA) (color.RGBA, error) {
 
 func formatGridColor(value color.RGBA) string {
 	return fmt.Sprintf("#%02x%02x%02x%02x", value.R, value.G, value.B, value.A)
+}
+
+// autoLabelScale 按 tile 短边推导编号缩放系数：让数字高度约占 tile 短边的 13%
+// （与 160px 默认 tile + label_scale=3 的历史观感一致），随 tile 变大自动放大。
+// 数字字形为 5×7 位图，每单位 scale 令字形高度为 7*scale。
+func autoLabelScale(tileMin int) int {
+	if tileMin <= 0 {
+		return 3
+	}
+	s := tileMin / 53
+	if s < 3 {
+		s = 3
+	}
+	if s > 48 {
+		s = 48
+	}
+	return s
 }
 
 // mixSeed 在未显式指定 seed 时混入 crypto 熵，避免高并发下纳秒种子碰撞导致选图重复。

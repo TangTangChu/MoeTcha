@@ -116,6 +116,7 @@ func serve(config core.Config) int {
 		GridConcurrency: config.Service.GridGenerateConcurrency,
 		MaxSourcePixels: config.Service.MaxSourceImagePixels,
 		RenderQuality:   config.Render.Quality,
+		GridWebPMethod:  config.Service.GridWebPMethod,
 	}
 
 	// ReleaseMode 抑制 gin 启动时那一串 [GIN-debug] 路由注册输出与

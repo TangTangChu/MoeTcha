@@ -257,3 +257,89 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+func TestAutoLabelScale(t *testing.T) {
+	cases := []struct {
+		tileMin, want int
+	}{
+		{0, 3},       // 退化默认
+		{16, 3},      // 最小 tile 仍用下限 3
+		{160, 3},     // 历史 160px 默认 -> 3（保持观感）
+		{320, 6},     // 2x -> 6
+		{600, 11},    // 大 tile -> 11，编号随 tile 变大
+		{1200, 22},   // 更大 -> 22
+		{2048, 38},   // tile 上限 -> 38
+		{100000, 48}, // 超大被钳到 48 上限
+	}
+	for _, c := range cases {
+		if got := autoLabelScale(c.tileMin); got != c.want {
+			t.Errorf("autoLabelScale(%d)=%d, want %d", c.tileMin, got, c.want)
+		}
+	}
+}
+
+func TestGridImageLabelScaleAutoFromTileSize(t *testing.T) {
+	idx, _ := buildGridImageTestIndexer(t)
+	engine := NewEngine(idx)
+	// 不传 label_scale（0=自动）：大 tile 应自动放大编号，不再恒为 3。
+	plan, err := engine.buildGridImagePlan(GridImageGenerateRequest{
+		Tag:          "猫",
+		ImageCount:   4,
+		CorrectCount: 2,
+		Rows:         2,
+		Columns:      2,
+		TileWidth:    600,
+		TileHeight:   600,
+		Shuffle:      boolPtr(false),
+		Seed:         int64Ptr(7),
+	}, DiffEasy)
+	if err != nil {
+		t.Fatalf("buildGridImagePlan: %v", err)
+	}
+	if plan.compose.LabelScale != 11 {
+		t.Fatalf("auto label_scale for 600px tile=%d, want 11", plan.compose.LabelScale)
+	}
+}
+
+func TestGridImageLabelScaleExplicitOverridesAuto(t *testing.T) {
+	idx, _ := buildGridImageTestIndexer(t)
+	engine := NewEngine(idx)
+	plan, err := engine.buildGridImagePlan(GridImageGenerateRequest{
+		Tag:          "猫",
+		ImageCount:   4,
+		CorrectCount: 2,
+		Rows:         2,
+		Columns:      2,
+		TileWidth:    600,
+		TileHeight:   600,
+		LabelScale:   2,
+		Shuffle:      boolPtr(false),
+		Seed:         int64Ptr(7),
+	}, DiffEasy)
+	if err != nil {
+		t.Fatalf("buildGridImagePlan: %v", err)
+	}
+	if plan.compose.LabelScale != 2 {
+		t.Fatalf("explicit label_scale=2 overridden to %d", plan.compose.LabelScale)
+	}
+}
+
+func TestGridWebPMethodAuto(t *testing.T) {
+	cases := []struct {
+		configured, pixels, want int
+	}{
+		{0, 100_000, 4},    // auto: 小图 -> 4
+		{0, 250_000, 4},    // auto: 边界
+		{0, 1_000_000, 2},  // auto: 中图 -> 2
+		{0, 4_000_000, 2},  // auto: 中图边界
+		{0, 10_000_000, 1}, // auto: 超大图 -> 1
+		{6, 10_000_000, 6}, // 显式优先，不被 auto 覆盖
+		{99, 100, 6},       // 超上限钳到 6
+	}
+	for _, c := range cases {
+		s := &Service{GridWebPMethod: c.configured}
+		if got := s.gridWebPMethod(c.pixels); got != c.want {
+			t.Errorf("gridWebPMethod(cfg=%d, px=%d)=%d, want %d", c.configured, c.pixels, got, c.want)
+		}
+	}
+}

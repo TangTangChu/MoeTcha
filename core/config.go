@@ -52,6 +52,10 @@ type ServiceConfig struct {
 
 	// MaxSourceImagePixels 限制单张源图解码后的像素数，超过则拒绝，防止内存放大。0 表示使用默认值。
 	MaxSourceImagePixels int
+
+	// GridWebPMethod 控制 /grid/generate 合成图的 libwebp effort（0=最快，6=最慢/质量最高）。
+	// 0 表示自动：按合成图像素数选档（小图 4 / 中图 2 / 大图 1），避免大网格编码耗时几秒。
+	GridWebPMethod int
 }
 
 type APIAuthConfig struct {
