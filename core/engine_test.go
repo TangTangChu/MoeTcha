@@ -117,11 +117,24 @@ func TestGenerateGridChallenge(t *testing.T) {
 		}
 	}
 
+	// image_id 现为不透明令牌，需经 Path 反查源图元信息。
+	pathToMeta := make(map[string]GridImageMeta, len(idx.AllGridImages()))
+	for _, m := range idx.AllGridImages() {
+		pathToMeta[m.Path] = m
+	}
+	idToPath := make(map[string]string, len(chal.Grid.Images))
+	for _, im := range chal.Grid.Images {
+		idToPath[im.ImageID] = im.Path
+	}
 	// All correct images should have the same tag
 	for _, cid := range chal.Grid.CorrectImageIDs {
-		img, ok := idx.GetGridImage(cid)
+		p, ok := idToPath[cid]
 		if !ok {
-			t.Errorf("image ID %q not in indexer", cid)
+			t.Errorf("correct image ID %q not found in images list", cid)
+			continue
+		}
+		img, ok := pathToMeta[p]
+		if !ok {
 			continue
 		}
 		if !hasTag(img.Tags, chal.Tag) {
@@ -222,16 +235,20 @@ func TestDifficultyEasy(t *testing.T) {
 	for _, cid := range chal.Grid.CorrectImageIDs {
 		correctSet[cid] = true
 	}
+	pathToMeta := make(map[string]GridImageMeta, len(idx.AllGridImages()))
+	for _, m := range idx.AllGridImages() {
+		pathToMeta[m.Path] = m
+	}
 	for _, img := range chal.Grid.Images {
 		if correctSet[img.ImageID] {
 			continue
 		}
-		meta, ok := idx.GetGridImage(img.ImageID)
+		meta, ok := pathToMeta[img.Path]
 		if !ok {
 			continue
 		}
 		if hasTag(meta.Tags, chal.Tag) {
-			t.Errorf("distractor %q has target tag %q", img.ImageID, chal.Tag)
+			t.Errorf("distractor %q has target tag %q", img.Path, chal.Tag)
 		}
 	}
 }

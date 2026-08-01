@@ -136,17 +136,38 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 	final = append(final, distractors...)
 	final = shuffleGrid(rng, final)
 
+	// 为每张图片分配一个本次挑战内不透明的随机 ID，替代 "PackID:文件名"，
+	// 避免向客户端泄露源文件名与素材包目录结构。同一张源图在本次挑战内
+	// 映射到同一 opaque ID，使 /verify 的集合判等仍然成立。
+	opaque := make(map[string]string, len(final))
+	usedID := make(map[string]struct{}, len(final))
+	newOpaqueID := func() string {
+		for {
+			id := RandomHex(8)
+			if _, dup := usedID[id]; !dup {
+				usedID[id] = struct{}{}
+				return id
+			}
+		}
+	}
+	for _, img := range final {
+		realID := img.PackID + ":" + img.ID
+		if _, ok := opaque[realID]; !ok {
+			opaque[realID] = newOpaqueID()
+		}
+	}
+
 	items := make([]GridItemInternal, 0, len(final))
 	for _, img := range final {
 		items = append(items, GridItemInternal{
-			ImageID: img.PackID + ":" + img.ID,
+			ImageID: opaque[img.PackID+":"+img.ID],
 			Path:    img.Path,
 		})
 	}
 
 	correctIDs := make([]string, 0, len(correct))
 	for _, img := range correct {
-		correctIDs = append(correctIDs, img.PackID+":"+img.ID)
+		correctIDs = append(correctIDs, opaque[img.PackID+":"+img.ID])
 	}
 
 	question := buildQuestion(cfg.Question, e.idx.TagDisplay(tag))
@@ -331,7 +352,9 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 		Tag:      tag,
 		Click: &ClickChallengeInternal{
 			Image: ClickItemInternal{
-				ImageID: img.PackID + ":" + img.ID,
+				// 不透明随机 ID：click 仅按点击坐标判分，image_id 不参与验证，
+				// 此处赋随机值仅为响应字段完整，同时避免泄露源文件名与素材包。
+				ImageID: RandomHex(8),
 				Path:    img.Path,
 			},
 			Regions:  regions,

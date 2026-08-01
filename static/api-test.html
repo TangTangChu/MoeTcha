@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoeTcha · API 测试台</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --border:#2a2f3a;
+    --txt:#e6e8ec; --mut:#8a93a3; --acc:#7c9cff; --acc2:#5b7cff;
+    --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; --code:#0d1016;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column}
+  header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex-wrap:wrap}
+  header .brand{font-weight:700;letter-spacing:.5px;white-space:nowrap}
+  header .brand small{color:var(--mut);font-weight:400}
+  .fld{display:flex;flex-direction:column;gap:2px}
+  .fld label{font-size:11px;color:var(--mut)}
+  input,select,textarea,button{font-family:inherit;font-size:13px;color:var(--txt);background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--acc)}
+  textarea{font-family:var(--mono);resize:vertical}
+  button{cursor:pointer;background:var(--acc2);border-color:transparent;color:#fff;font-weight:600;transition:filter .12s}
+  button:hover{filter:brightness(1.12)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--txt);border:1px solid var(--border)}
+  button.ghost:hover{background:var(--panel2)}
+  button.sm{padding:3px 8px;font-size:12px}
+  .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+  .grow{flex:1 1 auto;min-width:120px}
+  .wrap{display:flex;flex:1 1 auto;min-height:0}
+  nav{background:var(--panel);border-right:1px solid var(--border);padding:8px;width:180px;flex:0 0 180px;overflow:auto}
+  nav button{display:block;width:100%;text-align:left;margin-bottom:4px;background:transparent;color:var(--txt);border:1px solid transparent;font-weight:500}
+  nav button:hover{background:var(--panel2)}
+  nav button.active{background:var(--acc2);color:#fff}
+  nav .sec{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin:12px 6px 4px}
+  main{flex:1 1 auto;display:flex;min-width:0}
+  .pane{flex:1 1 50%;min-width:0;display:flex;flex-direction:column;min-width:0}
+  .pane.left{border-right:1px solid var(--border);overflow:auto}
+  .pane.right{overflow:auto}
+  .pane-inner{padding:14px}
+  h2{font-size:15px;margin:0 0 4px}
+  h3{font-size:13px;margin:14px 0 4px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+  .desc{color:var(--mut);font-size:12px;margin:0 0 12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .field{display:flex;flex-direction:column;gap:3px}
+  .field label{font-size:11px;color:var(--mut)}
+  .field input,.field select{width:100%}
+  details>summary{cursor:pointer;color:var(--mut);font-size:12px;padding:6px 0}
+  details[open]>summary{color:var(--txt)}
+  .tiles{display:flex;flex-wrap:wrap;gap:6px}
+  .tile{position:relative;border:2px solid transparent;border-radius:6px;overflow:hidden;cursor:pointer;background:var(--code)}
+  .tile.sel{border-color:var(--ok)}
+  .tile img{display:block;width:96px;height:96px;object-fit:cover}
+  .tile .num{position:absolute;top:2px;left:4px;background:rgba(0,0,0,.7);color:#fff;border-radius:4px;padding:0 4px;font-size:11px;font-family:var(--mono)}
+  .tile .id{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#9be;font-size:9px;font-family:var(--mono);padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile.correct::after{content:"✓";position:absolute;top:2px;right:4px;color:var(--ok);font-weight:700;text-shadow:0 0 3px #000}
+  .clickstage{position:relative;display:inline-block;line-height:0;max-width:100%}
+  .clickstage img{max-width:100%;height:auto;display:block;border-radius:6px}
+  .pt{position:absolute;width:14px;height:14px;border:2px solid #fff;border-radius:50%;transform:translate(-50%,-50%);background:rgba(248,113,113,.5);box-shadow:0 0 0 1px #000;pointer-events:none}
+  .pt .lbl{position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:#000;color:#fff;font-size:10px;font-family:var(--mono);border-radius:3px;padding:0 3px;white-space:nowrap}
+  .ptlist{display:flex;flex-direction:column;gap:3px;max-height:180px;overflow:auto}
+  .ptrow{display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:12px;background:var(--panel2);padding:3px 6px;border-radius:4px}
+  .badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;font-family:var(--mono)}
+  .b-ok{background:rgba(74,222,128,.15);color:var(--ok)}
+  .b-bad{background:rgba(248,113,113,.15);color:var(--bad)}
+  .b-warn{background:rgba(251,191,36,.15);color:var(--warn)}
+  .b-mut{background:rgba(138,147,163,.15);color:var(--mut)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:4px 6px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+  th{color:var(--mut);font-weight:500}
+  td.mono,th.mono{font-family:var(--mono)}
+  .resp-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:var(--panel2);border-bottom:1px solid var(--border)}
+  .resp-meta{font-size:12px;color:var(--mut);font-family:var(--mono)}
+  pre.json{margin:0;padding:12px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;line-height:1.5;background:var(--code)}
+  .k{color:#7aa2ff}.s{color:#9ece6a}.n{color:#e0af68}.b{color:#ff9e64}.null{color:var(--mut)}
+  .kvline{display:flex;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .kvline b{color:var(--txt);font-weight:400}
+  .empty{color:var(--mut);font-style:italic;padding:24px;text-align:center}
+  .hist{display:flex;flex-direction:column;gap:3px}
+  .hist .h{display:flex;gap:6px;align-items:center;padding:5px 8px;border-radius:5px;cursor:pointer;font-size:12px;border:1px solid transparent}
+  .hist .h:hover{background:var(--panel2)}
+  .hist .h.active{background:var(--panel2);border-color:var(--border)}
+  .hist .m{font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px;background:var(--code);color:var(--acc)}
+  .hist .url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--border);padding:8px 14px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:99}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--mut);border-top-color:var(--acc);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  a{color:var(--acc)}
+  .code-inline{font-family:var(--mono);background:var(--code);padding:1px 4px;border-radius:3px;font-size:12px}
+  .hint{font-size:11px;color:var(--mut);background:var(--panel2);border-left:3px solid var(--acc);padding:6px 8px;border-radius:0 4px 4px 0;margin:6px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">MoeTcha <small>API 测试台</small></div>
+  <div class="fld grow" style="max-width:340px">
+    <label>Base URL</label>
+    <input id="baseUrl" value="http://localhost:8080" placeholder="http://host:port">
+  </div>
+  <div class="fld grow" style="max-width:260px">
+    <label>API Token（/grid/generate 鉴权，留空则不带）</label>
+    <input id="apiToken" placeholder="Bearer token，可空">
+  </div>
+  <button class="ghost sm" onclick="actHealth(true)">⚡ Ping /healthz</button>
+</header>
+
+<div class="wrap">
+  <nav id="nav">
+    <div class="sec">只读</div>
+    <button data-tab="health" class="active">健康检查 /healthz</button>
+    <button data-tab="metrics">指标 /metrics</button>
+    <button data-tab="asset">资源 /asset/:key</button>
+    <div class="sec">验证码流程</div>
+    <button data-tab="challenge">获取题目 /challenge</button>
+    <button data-tab="verify">提交校验 /verify</button>
+    <div class="sec">内部工具</div>
+    <button data-tab="gridgen">合成网格 /grid/generate</button>
+    <div class="sec">日志</div>
+    <button data-tab="history">历史记录</button>
+  </nav>
+
+  <main>
+    <!-- LEFT: request builder -->
+    <section class="pane left">
+      <div class="pane-inner" id="builder"></div>
+    </section>
+
+    <!-- RIGHT: response viewer -->
+    <section class="pane right">
+      <div class="resp-head">
+        <span id="rMethod" class="badge b-mut">—</span>
+        <span id="rUrl" class="resp-meta" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">尚未发起请求</span>
+        <span id="rStatus" class="badge b-mut">—</span>
+        <span id="rMs" class="resp-meta"></span>
+        <span id="rReqId" class="resp-meta"></span>
+        <span id="rSpin" style="display:none"><span class="spin"></span></span>
+      </div>
+      <div style="display:flex;flex:1;min-height:0">
+        <div style="flex:1;overflow:auto;border-right:1px solid var(--border);min-width:0">
+          <div style="padding:8px 12px"><div class="kvline" style="margin-bottom:4px;color:var(--txt);font-weight:600">请求</div><div id="rReqHeaders"></div><pre id="rReqBody" class="json" style="display:none"></pre></div>
+          <div style="padding:0 12px 8px"><div class="kvline" style="margin-bottom:4px;color:var(--txt);font-weight:600">响应头</div><div id="rRespHeaders"></div></div>
+          <div style="padding:0 12px 12px"><div class="kvline" style="margin-bottom:4px;color:var(--txt);font-weight:600">响应体</div><pre id="rBody" class="json"><span class="empty">选择左侧某个端点并发起请求，结果会显示在这里。</span></pre></div>
+        </div>
+        <div style="flex:1;overflow:auto;min-width:0" id="rPreview">
+          <div class="empty" style="padding:40px 20px">渲染预览区<br><small style="color:var(--mut)">图片/网格/点击点会显示在这里</small></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   全局状态
+   ============================================================ */
+const state = {
+  baseUrl: localStorage.getItem("mt_base") || "http://localhost:8080",
+  apiToken: localStorage.getItem("mt_tok") || "",
+  lastChallenge: null,   // {session_id, token, type, question, grid:{images}, click:{image, required}}
+  lastGridGen: null,     // /grid/generate 结果
+  history: [],           // 请求记录
+  activeTab: "health",
+  activeHistId: null,
+};
+
+/* ============================================================
+   工具
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const builder = () => $("builder");
+
+function base(){ const v = $("baseUrl").value.trim().replace(/\/+$/,""); return v || "http://localhost:8080"; }
+function tok(){ return $("apiToken").value.trim(); }
+function assetUrl(key){ return base() + "/asset/" + encodeURIComponent(key); }
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),1800); }
+
+// 简易 JSON 高亮
+function hl(obj){
+  let json;
+  try { json = typeof obj==="string"?obj:JSON.stringify(obj,null,2); }
+  catch(e){ json = String(obj); }
+  if(!json) return '<span class="null">(空)</span>';
+  json = esc(json);
+  return json.replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"\s*:?)|(\b-?\d+\.?\d*([eE][+-]?\d+)?\b)|(\btrue\b|\bfalse\b)|(\bnull\b)/g,
+    m => {
+      if(/^"/.test(m)) return m.endsWith(":") ? '<span class="k">'+m+'</span>' : '<span class="s">'+m+'</span>';
+      if(/^(true|false)$/.test(m)) return '<span class="b">'+m+'</span>';
+      if(m==="null") return '<span class="null">'+m+'</span>';
+      return '<span class="n">'+m+'</span>';
+    });
+}
+
+/* ============================================================
+   请求引擎
+   ============================================================ */
+let reqSeq = 0;
+async function apiCall({method, path, query, body, headers={}, binary=false, label}){
+  const id = ++reqSeq;
+  let url = base() + path;
+  if(query){
+    const qs = new URLSearchParams();
+    for(const k in query){ if(query[k]!==undefined && query[k]!==null && query[k]!=="") qs.append(k, query[k]); }
+    const s = qs.toString(); if(s) url += (url.includes("?")?"&":"?") + s;
+  }
+  const t = tok();
+  const h = Object.assign({}, headers);
+  if(t && !h["Authorization"] && !h["X-API-Token"]) h["X-API-Token"] = t;
+  const opts = {method, headers:h};
+  let reqBodyText = null;
+  if(body !== undefined && body !== null){
+    reqBodyText = (typeof body === "string") ? body : JSON.stringify(body,null,2);
+    opts.body = reqBodyText;
+    if(!h["Content-Type"]) h["Content-Type"] = "application/json";
+  }
+  // 标记右侧 loading
+  $("rSpin").style.display = "inline-block";
+  $("rMethod").textContent = method; $("rMethod").className = "badge "+methodBadge(method);
+  $("rUrl").textContent = url; $("rUrl").title = url;
+  $("rStatus").textContent = "…"; $("rStatus").className="badge b-mut";
+  $("rMs").textContent=""; $("rReqId").textContent="";
+  const t0 = performance.now();
+  const rec = {id, time:new Date(), method, url, reqHeaders:h, reqBody:reqBodyText, label: label||`${method} ${path}`};
+  let resp, err=null, respBody=null, respText=null, contentType="";
+  try{
+    resp = await fetch(url, opts);
+    contentType = resp.headers.get("content-type")||"";
+    if(binary || /^(image|application\/octet-stream)/.test(contentType)){
+      const blob = await resp.blob();
+      respBody = URL.createObjectURL(blob);
+      respText = `[二进制 ${blob.size} 字节, ${contentType||"未知类型"}]`;
+    } else {
+      respText = await resp.text();
+      try { respBody = JSON.parse(respText); } catch(e){ respBody = respText; }
+    }
+  }catch(e){
+    err = e; respText = String(e);
+  }
+  const dur = Math.round(performance.now()-t0);
+  $("rSpin").style.display="none";
+  rec.status = resp?resp.status:0;
+  rec.statusText = resp?resp.statusText:(err?"网络错误":"");
+  rec.duration = dur;
+  rec.respHeaders = resp ? [...resp.headers.entries()] : [];
+  rec.requestId = resp ? (resp.headers.get("x-request-id")||"") : "";
+  rec.respBody = respBody;
+  rec.respText = respText;
+  rec.contentType = contentType;
+  rec.error = err;
+  // 跨域时浏览器可能读不到 X-Request-ID 响应头（除非后端暴露），
+  // 退一步从统一信封里的 request_id 字段取，保证页面始终能展示关联 ID。
+  if(!rec.requestId && respBody && typeof respBody==="object" && respBody.request_id){
+    rec.requestId = respBody.request_id;
+  }
+  state.history.unshift(rec);
+  if(state.history.length>200) state.history.length=200;
+  renderResponse(rec);
+  if(state.activeTab==="history") renderHistory();
+  return rec;
+}
+function methodBadge(m){
+  return m==="GET"?"b-mut":m==="POST"?"b-ok":m==="DELETE"?"b-bad":"b-warn";
+}
+
+/* ============================================================
+   右侧响应渲染
+   ============================================================ */
+function renderResponse(rec){
+  $("rMethod").textContent = rec.method; $("rMethod").className="badge "+methodBadge(rec.method);
+  $("rUrl").textContent = rec.url; $("rUrl").title = rec.url;
+  if(rec.error){
+    $("rStatus").textContent="网络错误"; $("rStatus").className="badge b-bad";
+  } else {
+    const sc = rec.status;
+    const cls = sc>=200&&sc<300?"b-ok":sc>=300&&sc<400?"b-warn":sc>=400?"b-bad":"b-mut";
+    $("rStatus").textContent = sc + (rec.statusText?(" "+rec.statusText):"");
+    $("rStatus").className="badge "+cls;
+  }
+  $("rMs").textContent = rec.duration+"ms";
+  $("rReqId").textContent = rec.requestId?("X-Request-ID: "+rec.requestId):"";
+  // 请求头
+  let hh = "";
+  for(const [k,v] of Object.entries(rec.reqHeaders||{})) hh += `<div class="kvline"><b>${esc(k)}:</b> ${esc(v)}</div>`;
+  if(!hh) hh = '<div class="kvline">(无)</div>';
+  $("rReqHeaders").innerHTML = hh;
+  // 请求体
+  const rb = $("rReqBody");
+  if(rec.reqBody){ rb.style.display="block"; rb.innerHTML = hl(rec.reqBody); } else { rb.style.display="none"; }
+  // 响应头
+  let rh="";
+  if(rec.respHeaders && rec.respHeaders.length){
+    for(const [k,v] of rec.respHeaders) rh += `<div class="kvline"><b>${esc(k)}:</b> ${esc(v)}</div>`;
+  } else rh='<div class="kvline">(无 / 跨域未暴露)</div>';
+  $("rRespHeaders").innerHTML = rh;
+  // 响应体
+  const body = $("rBody");
+  if(typeof rec.respBody === "string" && rec.respBody.startsWith("blob:")){
+    body.innerHTML = '<span class="s">'+esc(rec.respText||"")+'</span>';
+  } else if(rec.error){
+    body.innerHTML = '<span class="null">'+esc(rec.respText||String(rec.error))+'</span>';
+  } else {
+    body.innerHTML = hl(rec.respBody);
+  }
+}
+
+function setPreview(html){ $("rPreview").innerHTML = html; }
+
+/* ============================================================
+   导航 / Tab
+   ============================================================ */
+document.querySelectorAll("#nav button[data-tab]").forEach(b=>{
+  b.addEventListener("click", ()=>switchTab(b.dataset.tab));
+});
+function switchTab(tab){
+  state.activeTab = tab;
+  document.querySelectorAll("#nav button[data-tab]").forEach(b=>b.classList.toggle("active", b.dataset.tab===tab));
+  ({health:renderHealth, metrics:renderMetrics, asset:renderAsset,
+    challenge:renderChallenge, verify:renderVerify, gridgen:renderGridGen,
+    history:renderHistory}[tab]||renderHealth)();
+}
+
+/* ============================================================
+   Health
+   ============================================================ */
+function renderHealth(){
+  builder().innerHTML = `
+    <h2>GET|POST|… /healthz</h2>
+    <p class="desc">健康检查，允许任意 HTTP 方法。用于验证服务在线与统一信封格式。</p>
+    <div class="field" style="margin-bottom:10px">
+      <label>HTTP 方法</label>
+      <select id="hlMethod">
+        <option>GET</option><option>POST</option><option>PUT</option>
+        <option>DELETE</option><option>PATCH</option><option>HEAD</option>
+      </select>
+    </div>
+    <button onclick="actHealth(false)">发送请求</button>
+    <h3>说明</h3>
+    <div class="hint">服务会在 <span class="code-inline">data.text</span> 回一个固定串，<span class="code-inline">data.method</span> 回显请求方法，便于验证 <span class="code-inline">Any()</span> 路由。</div>`;
+}
+async function actHealth(quick){
+  const m = quick?"GET":($("hlMethod")?.value||"GET");
+  await apiCall({method:m, path:"/healthz", label:`${m} /healthz`});
+}
+window.actHealth = actHealth;
+
+/* ============================================================
+   Metrics
+   ============================================================ */
+function renderMetrics(){
+  builder().innerHTML = `
+    <h2>GET /metrics</h2>
+    <p class="desc">返回累计计数快照：生成题目数、验证通过/失败数、资源服务数。</p>
+    <button onclick="apiCall({method:'GET',path:'/metrics',label:'GET /metrics'})">发送请求</button>`;
+}
+
+/* ============================================================
+   Asset
+   ============================================================ */
+function renderAsset(){
+  const lk = state.lastChallenge;
+  const gridKeys = lk&&lk.grid?lk.grid.images.map(i=>i.asset_key):[];
+  const clickKey = lk&&lk.click?lk.click.image.asset_key:null;
+  builder().innerHTML = `
+    <h2>GET /asset/:key</h2>
+    <p class="desc">按 asset_key 获取图片二进制。成功返回图片，失败返回错误信封。</p>
+    <div class="field" style="margin-bottom:10px">
+      <label>asset_key</label>
+      <input id="akKey" placeholder="例如 a1b2c3d4" value="${esc(state._lastAssetKey||"")}">
+    </div>
+    <div class="row">
+      <button onclick="actAsset()">获取图片</button>
+      ${gridKeys.length?`<button class="ghost sm" onclick="$('akKey').value=${JSON.stringify(gridKeys[0])};actAsset()">用上次 grid 题目第 1 张</button>`:""}
+      ${clickKey?`<button class="ghost sm" onclick="$('akKey').value=${JSON.stringify(clickKey)};actAsset()">用上次 click 题目图</button>`:""}
+    </div>
+    <h3>说明</h3>
+    <div class="hint">请求 404 时会返回 <span class="code-inline">NOT_FOUND</span> 错误信封而非图片。二进制响应会用对象 URL 渲染到右侧预览区。</div>`;
+}
+async function actAsset(){
+  const key = $("akKey").value.trim();
+  if(!key){ toast("请填写 asset_key"); return; }
+  state._lastAssetKey = key;
+  const rec = await apiCall({method:"GET", path:"/asset/"+encodeURIComponent(key), binary:true, label:`GET /asset/${key}`});
+  // 预览
+  if(rec.respBody && typeof rec.respBody==="string" && rec.respBody.startsWith("blob:")){
+    setPreview(`<div style="padding:12px"><div class="kvline" style="margin-bottom:8px"><b>${esc(rec.contentType||"image")}</b></div><img src="${rec.respBody}" style="max-width:100%;border-radius:6px;border:1px solid var(--border)"></div>`);
+  } else {
+    setPreview('<div class="empty" style="padding:40px 20px">非图片响应或请求失败<br><small>查看左侧响应体</small></div>');
+  }
+}
+window.actAsset = actAsset;
+
+/* ============================================================
+   Challenge
+   ============================================================ */
+function renderChallenge(){
+  builder().innerHTML = `
+    <h2>GET /challenge</h2>
+    <p class="desc">获取验证码题目。<span class="code-inline">type</span> 可选 grid / click，不传则随机。</p>
+    <div class="field" style="margin-bottom:10px;max-width:200px">
+      <label>type（可选）</label>
+      <select id="chType">
+        <option value="">（随机）</option>
+        <option value="grid">grid - 选图</option>
+        <option value="click">click - 点图</option>
+      </select>
+    </div>
+    <button onclick="actChallenge()">获取题目</button>
+    ${state.lastChallenge?`<div class="hint" style="margin-top:12px">已有缓存的题目：<span class="code-inline">${esc(state.lastChallenge.type)}</span> / <span class="code-inline">${esc(state.lastChallenge.session_id||"").slice(0,12)}…</span>，去 <a href="#" onclick="switchTab('verify');return false">/verify</a> 提交。</div>`:""}
+    <h3>题目说明</h3>
+    <div class="hint">grid 题目返回若干 <span class="code-inline">grid.images[]</span>，每张含 <span class="code-inline">image_id</span> 与 <span class="code-inline">asset_key</span>；<b>image_id 是本次会话的不透明随机令牌，不暴露源文件名与素材包结构</b>，正确答案需在 /verify 判定。<br>click 题目返回一张大图 <span class="code-inline">click.image</span> 与 <span class="code-inline">click.required</span>（0=点全部区域）。</div>`;
+}
+async function actChallenge(){
+  const type = $("chType").value;
+  const rec = await apiCall({method:"GET", path:"/challenge", query:type?{type}:null, label:`GET /challenge${type?"?type="+type:""}`});
+  if(rec.status===200 && rec.respBody && rec.respBody.ok && rec.respBody.data){
+    const d = rec.respBody.data;
+    state.lastChallenge = {
+      session_id: d.session_id, token: d.token, type: d.type,
+      question: d.question, expires_at: d.expires_at,
+      grid: d.grid||null, click: d.click||null
+    };
+    renderChallengePreview(d);
+  } else {
+    setPreview('<div class="empty" style="padding:40px 20px">题目获取失败，查看左侧响应</div>');
+  }
+  renderChallenge(); // 刷新缓存提示
+}
+window.actChallenge = actChallenge;
+
+function renderChallengePreview(d){
+  const t = d.type;
+  let html = `<div style="padding:12px"><h3 style="margin-top:0">题目预览</h3>`;
+  html += `<div class="kvline"><b>type:</b> ${esc(t)}</div>`;
+  html += `<div class="kvline"><b>question:</b> ${esc(d.question||"")}</div>`;
+  html += `<div class="kvline"><b>session_id:</b> ${esc(d.session_id||"")}</div>`;
+  html += `<div class="kvline"><b>expires_at:</b> ${esc(d.expires_at||"")}</div>`;
+  html += `<div style="margin-top:8px"><button class="sm" onclick="switchTab('verify')">→ 去 /verify 提交</button></div>`;
+  if(t==="grid" && d.grid){
+    html += `<h3>网格图片（${d.grid.images.length}）</h3><div class="tiles">`;
+    d.grid.images.forEach((im,i)=>{
+      html += `<div class="tile" title="${esc(im.image_id)}"><img src="${assetUrl(im.asset_key)}" loading="lazy"><div class="num">${i+1}</div><div class="id">${esc(im.image_id)}</div></div>`;
+    });
+    html += `</div>`;
+  } else if(t==="click" && d.click){
+    html += `<h3>点击图（required=${d.click.required||0}${d.click.required===0?"=全部":""}）</h3>`;
+    html += `<div class="hint">注意：服务端不暴露目标区域坐标（防泄漏答案）。可在 /verify 页面点击图片记录坐标后提交，通常会得到 <span class="code-inline">POINT_OUT_OF_REGION</span>，用于测试 API 行为。</div>`;
+    html += `<img src="${assetUrl(d.click.image.asset_key)}" style="max-width:100%;border-radius:6px;border:1px solid var(--border)">`;
+  }
+  html += `</div>`;
+  setPreview(html);
+}
+
+/* ============================================================
+   Verify
+   ============================================================ */
+function renderVerify(){
+  const c = state.lastChallenge;
+  if(!c){
+    builder().innerHTML = `<h2>POST /verify</h2><div class="hint">先去 <a href="#" onclick="switchTab('challenge');return false">/challenge</a> 获取一道题目，这里会自动填充 session_id / token / type 并构建提交表单。</div>`;
+    setPreview('<div class="empty" style="padding:40px 20px">尚无题目缓存</div>');
+    return;
+  }
+  let form = "";
+  if(c.type==="grid"){
+    const imgs = (c.grid&&c.grid.images)||[];
+    state._gridSel = state._gridSel || {};
+    form = `
+      <h3>选择图片（提交 image_ids）</h3>
+      <div class="row" style="margin-bottom:8px">
+        <button class="ghost sm" onclick="toggleAllGrid(true)">全选</button>
+        <button class="ghost sm" onclick="toggleAllGrid(false)">全不选</button>
+        <button class="ghost sm" onclick="submitGrid(true)">随机选 N 张提交</button>
+      </div>
+      <div class="tiles" id="gridTiles">${gridTilesHtml(imgs)}</div>`;
+  } else if(c.type==="click"){
+    form = `
+      <h3>点击图片记录坐标</h3>
+      <div class="hint">在下图点击添加点位；required=<b>${c.click.required||0}</b>${c.click.required===0?"（=全部区域）":""}。坐标基于图片原始像素。</div>
+      <div class="row" style="margin-bottom:8px">
+        <button class="ghost sm" onclick="clearPoints()">清空点位</button>
+        <span class="resp-meta">已记录 <b id="ptCount">0</b> / 需 ${c.click.required||"全部"}</span>
+      </div>`;
+  }
+  builder().innerHTML = `
+    <h2>POST /verify</h2>
+    <p class="desc">提交答案。无论对错都返回 HTTP 200，读 <span class="code-inline">data.solved</span>；仅请求级失败才 4xx。</p>
+    <div class="grid2" style="margin-bottom:8px">
+      <div class="field"><label>session_id</label><input value="${esc(c.session_id)}" readonly></div>
+      <div class="field"><label>type</label><input value="${esc(c.type)}" readonly></div>
+    </div>
+    <div class="field" style="margin-bottom:10px"><label>token</label><input value="${esc(c.token||"")}" readonly></div>
+    ${form}
+    <h3>手动构造（高级）</h3>
+    <details><summary>直接编辑 JSON 请求体提交</summary>
+      <div class="field" style="margin-top:6px"><label>请求体 JSON</label>
+        <textarea id="vManual" rows="6" style="width:100%">${esc(JSON.stringify(manualBody(c),null,2))}</textarea>
+      </div>
+      <button class="ghost sm" onclick="submitManual()" style="margin-top:6px">用上方 JSON 提交</button>
+    </details>`;
+  if(c.type==="grid"){ renderVerifyGridPreview(); }
+  else if(c.type==="click"){ renderVerifyClickPreview(); }
+}
+function gridTilesHtml(imgs){
+  return imgs.map((im,i)=>{
+    const sel = state._gridSel && state._gridSel[im.image_id];
+    return `<div class="tile ${sel?"sel":""}" data-id="${esc(im.image_id)}" onclick="toggleGrid('${esc(im.image_id)}')"><img src="${assetUrl(im.asset_key)}" loading="lazy"><div class="num">${i+1}</div><div class="id">${esc(im.image_id)}</div></div>`;
+  }).join("");
+}
+function toggleGrid(id){
+  state._gridSel = state._gridSel||{};
+  state._gridSel[id] = !state._gridSel[id];
+  const el = document.querySelector(`#gridTiles .tile[data-id="${CSS.escape(id)}"]`);
+  if(el) el.classList.toggle("sel", state._gridSel[id]);
+}
+function toggleAllGrid(on){
+  const c = state.lastChallenge; if(!c||!c.grid) return;
+  state._gridSel = {};
+  c.grid.images.forEach(im=>state._gridSel[im.image_id]=on);
+  document.querySelectorAll("#gridTiles .tile").forEach(t=>t.classList.toggle("sel",on));
+}
+async function submitGrid(random){
+  const c = state.lastChallenge; if(!c||!c.grid){ toast("无题目"); return; }
+  let ids;
+  if(random){
+    // 随机选 1~全部
+    const all = c.grid.images.map(i=>i.image_id);
+    const n = 1+Math.floor(Math.random()*all.length);
+    ids = all.slice().sort(()=>Math.random()-0.5).slice(0,n);
+    state._gridSel = {}; ids.forEach(i=>state._gridSel[i]=true);
+    document.querySelectorAll("#gridTiles .tile").forEach(t=>t.classList.toggle("sel", ids.includes(t.dataset.id)));
+  } else {
+    ids = Object.keys(state._gridSel||{}).filter(k=>state._gridSel[k]);
+  }
+  const body = {session_id:c.session_id, token:c.token, type:"grid", grid:{image_ids:ids}};
+  const rec = await apiCall({method:"POST", path:"/verify", body, label:"POST /verify (grid)"});
+  renderVerifyResult(rec);
+}
+function renderVerifyGridPreview(){
+  const c = state.lastChallenge;
+  setPreview(`<div style="padding:12px"><h3 style="margin-top:0">网格题目</h3><div class="kvline"><b>${esc(c.question)}</b></div><div class="tiles" style="margin-top:8px">${gridTilesHtml(c.grid.images)}</div><div style="margin-top:10px"><button class="sm" onclick="submitGrid(false)">提交已选 →</button></div></div>`);
+  // 同步选中态
+  document.querySelectorAll("#rPreview .tile").forEach(t=>{
+    if(state._gridSel && state._gridSel[t.dataset.id]) t.classList.add("sel");
+    t.addEventListener("click", ()=>{ toggleGrid(t.dataset.id); syncPreviewSel(); });
+  });
+}
+function syncPreviewSel(){
+  document.querySelectorAll("#rPreview .tile").forEach(t=>t.classList.toggle("sel", !!(state._gridSel&&state._gridSel[t.dataset.id])));
+}
+/* click */
+let clickPoints = [];
+function renderVerifyClickPreview(){
+  const c = state.lastChallenge;
+  clickPoints = [];
+  setPreview(`<div style="padding:12px"><h3 style="margin-top:0">点击题目</h3><div class="kvline"><b>${esc(c.question)}</b></div>
+    <div class="clickstage" id="clickStage" style="margin-top:8px">
+      <img id="clickImg" src="${assetUrl(c.click.image.asset_key)}" alt="">
+    </div></div>`);
+  const img = $("clickImg");
+  img.addEventListener("click", (e)=>{
+    const r = img.getBoundingClientRect();
+    const x = Math.round((e.clientX - r.left)/r.width * img.naturalWidth);
+    const y = Math.round((e.clientY - r.top)/r.height * img.naturalHeight);
+    clickPoints.push({x,y});
+    drawPoints();
+    $("ptCount").textContent = clickPoints.length;
+  });
+}
+function drawPoints(){
+  const st = $("clickStage"); if(!st) return;
+  st.querySelectorAll(".pt").forEach(n=>n.remove());
+  clickPoints.forEach((p,i)=>{
+    const d = document.createElement("div");
+    d.className="pt";
+    // 相对显示尺寸定位
+    const img = $("clickImg");
+    const r = img.getBoundingClientRect();
+    const sx = img.naturalWidth? r.width/img.naturalWidth:1;
+    const sy = img.naturalHeight? r.height/img.naturalHeight:1;
+    d.style.left = (p.x*sx)+"px";
+    d.style.top = (p.y*sy)+"px";
+    d.innerHTML = `<span class="lbl">${i+1}: ${p.x},${p.y}</span>`;
+    st.appendChild(d);
+  });
+}
+function clearPoints(){ clickPoints=[]; drawPoints(); const el=$("ptCount"); if(el) el.textContent="0"; }
+async function submitClick(){
+  const c = state.lastChallenge; if(!c||!c.click){ toast("无题目"); return; }
+  const body = {session_id:c.session_id, token:c.token, type:"click", click:{points:clickPoints.slice()}};
+  const rec = await apiCall({method:"POST", path:"/verify", body, label:"POST /verify (click)"});
+  renderVerifyResult(rec);
+}
+function submitManual(){
+  const c = state.lastChallenge; if(!c){ toast("无题目"); return; }
+  let body;
+  try { body = JSON.parse($("vManual").value); }
+  catch(e){ toast("JSON 解析失败: "+e.message); return; }
+  apiCall({method:"POST", path:"/verify", body, label:"POST /verify (manual)"}).then(renderVerifyResult);
+}
+function manualBody(c){
+  if(c.type==="grid") return {session_id:c.session_id, token:c.token, type:"grid", grid:{image_ids:(c.grid?c.grid.images.map(i=>i.image_id):[])}};
+  return {session_id:c.session_id, token:c.token, type:"click", click:{points:clickPoints.slice()}};
+}
+function renderVerifyResult(rec){
+  const d = rec.respBody && rec.respBody.data;
+  let html = `<div style="padding:12px"><h3 style="margin-top:0">验证结果</h3>`;
+  if(!rec.respBody || !rec.respBody.ok){
+    html += `<div class="badge b-bad">请求级失败</div><pre class="json" style="margin-top:8px">${hl(rec.respBody)}</pre></div>`;
+    setPreview(html); return;
+  }
+  const solved = d && d.solved;
+  html += `<div class="badge ${solved?"b-ok":"b-bad"}">${solved?"✓ 通过":"✗ 未通过"}</div>`;
+  if(d){
+    html += `<table style="margin-top:8px"><tbody>`;
+    for(const k of ["solved","code","reason","correct","total"]){
+      if(d[k]!==undefined && d[k]!=="" && k!=="solved")
+        html += `<tr><th class="mono">${k}</th><td class="mono">${esc(String(d[k]))}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  html += `<pre class="json" style="margin-top:8px">${hl(rec.respBody)}</pre></div>`;
+  setPreview(html);
+}
+window.toggleGrid=toggleGrid; window.toggleAllGrid=toggleAllGrid; window.submitGrid=submitGrid;
+window.submitClick=submitClick; window.clearPoints=clearPoints; window.submitManual=submitManual;
+window.switchTab=switchTab;
+
+// 在 verify tab 点击图片后也要能提交
+function ensureClickSubmitBtn(){
+  if(state.activeTab==="verify" && state.lastChallenge && state.lastChallenge.type==="click"){
+    const c = state.lastChallenge;
+    // 在 builder 底部加提交按钮（若没有）
+    if(!builder().querySelector("#clickSubmit")){
+      const b=document.createElement("button"); b.id="clickSubmit"; b.textContent="提交点击坐标 →";
+      b.style.marginTop="10px"; b.onclick=submitClick;
+      builder().appendChild(b);
+    }
+  }
+}
+setInterval(ensureClickSubmitBtn, 400);
+
+/* ============================================================
+   Grid Generate
+   ============================================================ */
+function renderGridGen(){
+  builder().innerHTML = `
+    <h2>POST /grid/generate</h2>
+    <p class="desc">从已加载 Grid 素材合成带编号的 WebP 网格图。鉴权用顶部 API Token。</p>
+    <div class="grid3">
+      <div class="field"><label>tag（目标标签）</label><input id="ggTag" placeholder="留空随机"></div>
+      <div class="field"><label>image_count / size</label><input id="ggCount" type="number" placeholder="如 9"></div>
+      <div class="field"><label>correct_count</label><input id="ggCorrect" type="number" placeholder="随机"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>rows</label><input id="ggRows" type="number" placeholder="自动"></div>
+      <div class="field"><label>columns / cols</label><input id="ggCols" type="number" placeholder="自动"></div>
+      <div class="field"><label>difficulty</label><select id="ggDiff"><option value="">默认 easy</option><option>easy</option><option>medium</option><option>hard</option></select></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>tile_width</label><input id="ggTw" type="number" placeholder="160"></div>
+      <div class="field"><label>tile_height</label><input id="ggTh" type="number" placeholder="160"></div>
+      <div class="field"><label>gap</label><input id="ggGap" type="number" placeholder="0"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>padding</label><input id="ggPad" type="number" placeholder="0"></div>
+      <div class="field"><label>fit</label><select id="ggFit"><option value="">cover</option><option>cover</option><option>contain</option><option>stretch</option></select></div>
+      <div class="field"><label>quality (1-100)</label><input id="ggQ" type="number" placeholder="80"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>background</label><input id="ggBg" placeholder="#f2f2f2"></div>
+      <div class="field"><label>label_color</label><input id="ggLc" placeholder="#ffffff"></div>
+      <div class="field"><label>label_background</label><input id="ggLb" placeholder="rgba(0,0,0,.75)"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label>label_position</label><select id="ggLp"><option value="">top_left</option><option>top_left</option><option>top_right</option><option>bottom_left</option><option>bottom_right</option><option>center</option></select></div>
+      <div class="field"><label>label_scale (1-16)</label><input id="ggLs" type="number" placeholder="3"></div>
+      <div class="field"><label>seed</label><input id="ggSeed" type="number" placeholder="随机"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>show_labels</label><select id="ggSl"><option value="">true</option><option value="true">true</option><option value="false">false</option></select></div>
+      <div class="field"><label>shuffle</label><select id="ggSh"><option value="">true</option><option value="true">true</option><option value="false">false</option></select></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>apply_renderer</label><select id="ggAr"><option value="">true</option><option value="true">true</option><option value="false">false</option></select></div>
+      <div class="field"><label>temporary_ttl_seconds</label><input id="ggTtl" type="number" placeholder="0=默认"></div>
+    </div>
+    <details><summary>显式指定图片（image_ids / correct_image_ids / correct_numbers / distractor_image_ids，逗号分隔）</summary>
+      <div class="field" style="margin-top:6px"><label>image_ids</label><input id="ggIids" placeholder="animals:cat_01, animals:dog_02"></div>
+      <div class="field" style="margin-top:6px"><label>correct_image_ids</label><input id="ggCids" placeholder="animals:cat_01"></div>
+      <div class="field" style="margin-top:6px"><label>correct_numbers（1-based，配合 image_ids）</label><input id="ggCnum" placeholder="1,3"></div>
+      <div class="field" style="margin-top:6px"><label>distractor_image_ids</label><input id="ggDid" placeholder="animals:dog_03"></div>
+    </details>
+    <div class="row" style="margin-top:12px">
+      <button onclick="submitGridGen()">合成网格图</button>
+      <button class="ghost sm" onclick="resetGridGen()">清空</button>
+    </div>
+    <div class="hint" style="margin-top:10px">该接口返回答案元数据（correct_numbers / tiles[].correct），仅适合内部工具。合成图会在右侧预览区渲染。</div>`;
+}
+function num(id){ const v=$(id).value.trim(); if(v==="") return undefined; const n=Number(v); return isNaN(n)?undefined:n; }
+function str(id){ const v=$(id).value.trim(); return v===""?undefined:v; }
+function boolSel(id){ const v=$(id).value; if(v==="") return undefined; if(v==="true") return true; if(v==="false") return false; return undefined; }
+function csv(id){ const v=$(id).value.trim(); if(!v) return undefined; return v.split(",").map(s=>s.trim()).filter(Boolean); }
+function csvNum(id){ const v=$(id).value.trim(); if(!v) return undefined; return v.split(",").map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n)); }
+async function submitGridGen(){
+  const body = {};
+  const tag=str("ggTag"); if(tag) body.tag=tag;
+  const ic=num("ggCount"); if(ic!==undefined) body.image_count=ic;
+  const cc=num("ggCorrect"); if(cc!==undefined) body.correct_count=cc;
+  const rows=num("ggRows"); if(rows!==undefined) body.rows=rows;
+  const cols=num("ggCols"); if(cols!==undefined) body.columns=cols;
+  const diff=str("ggDiff"); if(diff) body.difficulty=diff;
+  const tw=num("ggTw"); if(tw!==undefined) body.tile_width=tw;
+  const th=num("ggTh"); if(th!==undefined) body.tile_height=th;
+  const gap=num("ggGap"); if(gap!==undefined) body.gap=gap;
+  const pad=num("ggPad"); if(pad!==undefined) body.padding=pad;
+  const fit=str("ggFit"); if(fit) body.fit=fit;
+  const q=num("ggQ"); if(q!==undefined) body.quality=q;
+  const bg=str("ggBg"); if(bg) body.background=bg;
+  const lc=str("ggLc"); if(lc) body.label_color=lc;
+  const lb=str("ggLb"); if(lb) body.label_background=lb;
+  const lp=str("ggLp"); if(lp) body.label_position=lp;
+  const ls=num("ggLs"); if(ls!==undefined) body.label_scale=ls;
+  const seed=num("ggSeed"); if(seed!==undefined) body.seed=seed;
+  const sl=boolSel("ggSl"); if(sl!==undefined) body.show_labels=sl;
+  const sh=boolSel("ggSh"); if(sh!==undefined) body.shuffle=sh;
+  const ar=boolSel("ggAr"); if(ar!==undefined) body.apply_renderer=ar;
+  const ttl=num("ggTtl"); if(ttl!==undefined) body.temporary_ttl_seconds=ttl;
+  const iids=csv("ggIids"); if(iids) body.image_ids=iids;
+  const cids=csv("ggCids"); if(cids) body.correct_image_ids=cids;
+  const cnum=csvNum("ggCnum"); if(cnum) body.correct_numbers=cnum;
+  const did=csv("ggDid"); if(did) body.distractor_image_ids=did;
+  const rec = await apiCall({method:"POST", path:"/grid/generate", body, label:"POST /grid/generate"});
+  if(rec.status===200 && rec.respBody && rec.respBody.ok && rec.respBody.data){
+    state.lastGridGen = rec.respBody.data;
+    renderGridGenPreview(rec.respBody.data);
+  } else {
+    setPreview('<div class="empty" style="padding:40px 20px">生成失败，查看左侧响应</div>');
+  }
+}
+function renderGridGenPreview(d){
+  let html = `<div style="padding:12px"><h3 style="margin-top:0">合成结果</h3>`;
+  html += `<div class="row" style="gap:14px;margin-bottom:8px"><img src="${d.asset_url||assetUrl(d.asset_key)}" style="max-width:360px;border-radius:6px;border:1px solid var(--border)"></div>`;
+  const kv = [["tag",d.tag],["tag_display",d.tag_display],["question",d.question],
+    ["image_count",d.image_count],["correct_count",d.correct_count],
+    ["correct_numbers",(d.correct_numbers||[]).join(", ")],
+    ["size",`${d.width}×${d.height}`],["layout",`${d.rows}×${d.columns}`],
+    ["tile",`${d.tile_width}×${d.tile_height} gap=${d.gap} pad=${d.padding}`],
+    ["fit",d.fit],["quality",d.quality],["shuffle",d.shuffle],["show_labels",d.show_labels],
+    ["apply_renderer",d.apply_renderer],["seed",d.seed],["content_type",d.content_type],
+    ["asset_key",d.asset_key],["expires_at",d.expires_at]];
+  html += `<table><tbody>`;
+  kv.forEach(([k,v])=>{ if(v!==undefined && v!=="") html += `<tr><th class="mono">${k}</th><td class="mono">${esc(String(v))}</td></tr>`; });
+  html += `</tbody></table>`;
+  if(d.correct_image_ids && d.correct_image_ids.length){
+    html += `<div class="kvline" style="margin-top:6px"><b>correct_image_ids:</b> ${esc(d.correct_image_ids.join(", "))}</div>`;
+  }
+  if(d.tiles && d.tiles.length){
+    html += `<h3>tiles</h3><table><thead><tr><th>#</th><th>image_id</th><th>file</th><th>tags</th><th>correct</th><th>pos</th></tr></thead><tbody>`;
+    d.tiles.forEach(t=>{
+      html += `<tr style="${t.correct?"color:var(--ok)":""}"><td class="mono">${t.number}</td><td class="mono">${esc(t.image_id)}</td><td class="mono">${esc(t.file)}</td><td class="mono">${esc((t.tags||[]).join(","))}</td><td class="mono">${t.correct?"✓":""}</td><td class="mono">${t.x},${t.y} ${t.width}×${t.height}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+  setPreview(html);
+}
+function resetGridGen(){
+  document.querySelectorAll("#builder input").forEach(i=>{ if(i.type!=="button") i.value=""; });
+  document.querySelectorAll("#builder select").forEach(s=>{ s.value=""; });
+}
+window.submitGridGen=submitGridGen; window.resetGridGen=resetGridGen;
+
+/* ============================================================
+   History
+   ============================================================ */
+function renderHistory(){
+  builder().innerHTML = `
+    <h2>历史记录</h2>
+    <p class="desc">本次会话的请求记录（最多 200 条）。点击查看详情。</p>
+    <div class="row" style="margin-bottom:8px">
+      <button class="ghost sm" onclick="clearHistory()">清空</button>
+      <span class="resp-meta">${state.history.length} 条</span>
+    </div>
+    <div class="hist">${state.history.map(h=>histRow(h)).join("")||'<div class="empty">无记录</div>'}</div>`;
+  document.querySelectorAll("#builder .hist .h").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      state.activeHistId = Number(el.dataset.id);
+      const rec = state.history.find(r=>r.id===state.activeHistId);
+      if(rec){
+        renderResponse(rec);
+        if(typeof rec.respBody==="string" && rec.respBody.startsWith("blob:")){
+          setPreview(`<div style="padding:12px"><div class="kvline" style="margin-bottom:8px"><b>${esc(rec.contentType||"image")}</b></div><img src="${rec.respBody}" style="max-width:100%;border-radius:6px;border:1px solid var(--border)"></div>`);
+        }
+      }
+      document.querySelectorAll("#builder .hist .h").forEach(e=>e.classList.toggle("active", Number(e.dataset.id)===state.activeHistId));
+    });
+  });
+}
+function histRow(h){
+  const cls = h.error?"b-bad":(h.status>=200&&h.status<300?"b-ok":(h.status>=400?"b-bad":"b-warn"));
+  return `<div class="h ${state.activeHistId===h.id?"active":""}" data-id="${h.id}">
+    <span class="m">${esc(h.method)}</span>
+    <span class="badge ${cls}">${h.error?"ERR":h.status}</span>
+    <span class="url">${esc(h.label||h.url)}</span>
+    <span class="resp-meta">${h.duration}ms</span>
+  </div>`;
+}
+function clearHistory(){ state.history=[]; state.activeHistId=null; renderHistory(); renderResponse({method:"",url:"(已清空)",reqHeaders:{},reqBody:null,respHeaders:[],respBody:""}); }
+window.clearHistory=clearHistory;
+
+/* ============================================================
+   初始化
+   ============================================================ */
+function init(){
+  $("baseUrl").value = state.baseUrl;
+  $("apiToken").value = state.apiToken;
+  $("baseUrl").addEventListener("change", e=>{ state.baseUrl=e.target.value; localStorage.setItem("mt_base",e.target.value); });
+  $("apiToken").addEventListener("change", e=>{ state.apiToken=e.target.value; localStorage.setItem("mt_tok",e.target.value); });
+  switchTab("health");
+}
+init();
+</script>
+</body>
+</html>
