@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +20,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     attempts       INTEGER NOT NULL DEFAULT 0,
     max_attempts   INTEGER NOT NULL DEFAULT 3,
     ip             TEXT    NOT NULL DEFAULT '',
-    user_agent     TEXT    NOT NULL DEFAULT ''
+    user_agent     TEXT    NOT NULL DEFAULT '',
+    last_attempt_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_ip ON sessions(ip);
 
@@ -85,6 +87,10 @@ func NewSQLiteSessionStore(dbPath string) (*SQLiteSessionStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("执行 schema 迁移失败: %w", err)
 	}
+	if err := migrateSessionsLastAttemptAt(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("迁移 sessions.last_attempt_at 失败: %w", err)
+	}
 
 	store := &SQLiteSessionStore{
 		db:        db,
@@ -99,6 +105,20 @@ func NewSQLiteSessionStore(dbPath string) (*SQLiteSessionStore, error) {
 	go store.cleanupLoop()
 
 	return store, nil
+}
+
+// migrateSessionsLastAttemptAt 为旧库的 sessions 表补齐 last_attempt_at 列。
+// CREATE TABLE IF NOT EXISTS 不会给已存在的表加列，故需要显式迁移。
+// 列已存在时（重复迁移）SQLite 返回 "duplicate column name"，视作成功。
+func migrateSessionsLastAttemptAt(db *sql.DB) error {
+	_, err := db.Exec("ALTER TABLE sessions ADD COLUMN last_attempt_at INTEGER NOT NULL DEFAULT 0")
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *SQLiteSessionStore) DB() *sql.DB {
@@ -194,7 +214,8 @@ func (s *SQLiteSessionStore) IncrementAttempt(id string) (ChallengeSession, bool
 		return ChallengeSession{}, false
 	}
 	ss.Attempts++
-	_, err := s.db.Exec("UPDATE sessions SET attempts = ? WHERE id = ?", ss.Attempts, id)
+	ss.LastAttemptAt = s.clock()
+	_, err := s.db.Exec("UPDATE sessions SET attempts = ?, last_attempt_at = ? WHERE id = ?", ss.Attempts, ss.LastAttemptAt.Unix(), id)
 	if err != nil {
 		return ChallengeSession{}, false
 	}
@@ -203,20 +224,21 @@ func (s *SQLiteSessionStore) IncrementAttempt(id string) (ChallengeSession, bool
 
 func (s *SQLiteSessionStore) getLocked(id string) (ChallengeSession, bool) {
 	row := s.db.QueryRow(
-		"SELECT id, challenge_json, created_at, expires_at, attempts, max_attempts, ip, user_agent FROM sessions WHERE id = ?",
+		"SELECT id, challenge_json, created_at, expires_at, attempts, max_attempts, ip, user_agent, last_attempt_at FROM sessions WHERE id = ?",
 		id,
 	)
 
 	var ss ChallengeSession
 	var chalJSON string
-	var createdUnix, expiresUnix int64
-	err := row.Scan(&ss.ID, &chalJSON, &createdUnix, &expiresUnix, &ss.Attempts, &ss.MaxAttempts, &ss.IP, &ss.UserAgent)
+	var createdUnix, expiresUnix, lastAttemptUnix int64
+	err := row.Scan(&ss.ID, &chalJSON, &createdUnix, &expiresUnix, &ss.Attempts, &ss.MaxAttempts, &ss.IP, &ss.UserAgent, &lastAttemptUnix)
 	if err != nil {
 		return ChallengeSession{}, false
 	}
 
 	ss.CreatedAt = time.Unix(createdUnix, 0)
 	ss.ExpiresAt = time.Unix(expiresUnix, 0)
+	ss.LastAttemptAt = time.Unix(lastAttemptUnix, 0)
 
 	// Check expiry and max attempts (same logic as memory store)
 	if !ss.ExpiresAt.IsZero() && s.clock().After(ss.ExpiresAt) {
@@ -370,13 +392,15 @@ func (s *SQLiteSessionStore) VerifyToken(sessionID string, ctx VerifyContext, po
 			return fmt.Errorf("token session 不匹配")
 		}
 	}
+	// 先校验绑定（IP/UA），再消费单次 token。否则一个 IP/UA 不匹配的 token
+	// 会被烧掉，导致合法持有者（正确 IP/UA）再也无法使用。
+	if err := verifyTokenBinding(claims, ctx, policy); err != nil {
+		return err
+	}
 	if policy.SingleUse {
 		if !s.markTokenUsed(claims.ID, policy.TTL) {
 			return fmt.Errorf("token 已使用")
 		}
-	}
-	if err := verifyTokenBinding(claims, ctx, policy); err != nil {
-		return err
 	}
 	return nil
 }

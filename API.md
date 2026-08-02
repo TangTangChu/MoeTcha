@@ -259,8 +259,8 @@ curl -X POST "http://localhost:8080/healthz"
 | `MISSING_UA` | 403 | 缺少 User-Agent |
 | `UA_MISMATCH` | 403 | User-Agent 不匹配 |
 | `IP_MISMATCH` | 403 | IP 不匹配 |
-| `TOO_MANY_ATTEMPTS` | 400 | IP 尝试次数过多 |
-| `HIGH_FAIL_RATIO` | 400 | 失败率过高 |
+| `TOO_MANY_ATTEMPTS` | 429 | IP 尝试次数过多 |
+| `HIGH_FAIL_RATIO` | 429 | 失败率过高 |
 | `TOKEN_INVALID` | 401 | Token 无效或已过期 |
 | `MISSING_GRID` | 400 | 缺少 grid 请求体 |
 | `MISSING_CLICK` | 400 | 缺少 click 请求体 |

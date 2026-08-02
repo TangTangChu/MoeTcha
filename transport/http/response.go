@@ -10,15 +10,15 @@ import (
 
 // 通用 HTTP 错误码。请求级失败统一用这些。
 const (
-	CodeBadRequest            = "BAD_REQUEST"
-	CodeUnauthorized          = "UNAUTHORIZED"
-	CodeForbidden             = "FORBIDDEN"
-	CodeNotFound              = "NOT_FOUND"
-	CodeMethodNotAllowed      = "METHOD_NOT_ALLOWED"
-	CodeRateLimited           = "RATE_LIMITED"
-	CodePayloadTooLarge       = "PAYLOAD_TOO_LARGE"
-	CodeInternal              = "INTERNAL"
-	CodeServiceUninitialized  = "SERVICE_UNINITIALIZED"
+	CodeBadRequest           = "BAD_REQUEST"
+	CodeUnauthorized         = "UNAUTHORIZED"
+	CodeForbidden            = "FORBIDDEN"
+	CodeNotFound             = "NOT_FOUND"
+	CodeMethodNotAllowed     = "METHOD_NOT_ALLOWED"
+	CodeRateLimited          = "RATE_LIMITED"
+	CodePayloadTooLarge      = "PAYLOAD_TOO_LARGE"
+	CodeInternal             = "INTERNAL"
+	CodeServiceUninitialized = "SERVICE_UNINITIALIZED"
 )
 
 // apiError 是信封里的 error 子对象。
@@ -75,6 +75,9 @@ func nowStamp() string {
 func verifyErrorStatus(code string) int {
 	switch code {
 	case core.CodeRateLimited:
+		return http.StatusTooManyRequests
+	case core.CodeTooManyAttempts, core.CodeHighFailRatio:
+		// IP 级尝试/失败率封禁属于速率滥用类，语义上与限流一致。
 		return http.StatusTooManyRequests
 	case core.CodeTokenInvalid:
 		return http.StatusUnauthorized

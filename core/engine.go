@@ -123,6 +123,11 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 	if correctCount < 1 {
 		correctCount = 1
 	}
+	// correctCount 不得超过 cfg.Size，否则 distGoal=Size-correctCount 为负，
+	// 会让后续 distractors[:distGoal] 越界 panic（CorrectMax > Size 的错配场景）。
+	if cfg.Size > 0 && correctCount > cfg.Size {
+		correctCount = cfg.Size
+	}
 
 	correct := pickUniqueGrid(rng, correctCandidates, correctCount)
 	allGrid := e.idx.Load().AllGridImages()
@@ -144,6 +149,9 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 	maxCorrect := correctHi
 	if maxCorrect > len(correctCandidates) {
 		maxCorrect = len(correctCandidates)
+	}
+	if cfg.Size > 0 && maxCorrect > cfg.Size {
+		maxCorrect = cfg.Size
 	}
 	for len(distractors) < distGoal && correctCount < maxCorrect {
 		correctCount++
@@ -291,16 +299,6 @@ func (e *Engine) pickDistractorsWithRNG(rng *rand.Rand, tag string, need int, di
 	}
 
 	return out
-}
-
-func takeN(in []GridImageMeta, n int) []GridImageMeta {
-	if n <= 0 || len(in) == 0 {
-		return nil
-	}
-	if n > len(in) {
-		n = len(in)
-	}
-	return in[:n]
 }
 
 func hasAnyTag(tags []string, targetSet map[string]struct{}) bool {

@@ -28,7 +28,6 @@ func buildTokenClaims(sessionID string, ctx VerifyContext, policy TokenPolicy) t
 	exp := issued.Add(ttl)
 	claims := tokenClaims{
 		ID:        RandomHex(16),
-		SessionID: sessionID,
 		IssuedAt:  issued,
 		ExpiresAt: exp,
 	}
@@ -38,6 +37,7 @@ func buildTokenClaims(sessionID string, ctx VerifyContext, policy TokenPolicy) t
 	if policy.BindUserAgent {
 		claims.UserAgent = ctx.UserAgent
 	}
+	// sessionID 仅在 BindSession 时进 token，verify 侧同样只在 BindSession 时校验。
 	if policy.BindSession {
 		claims.SessionID = sessionID
 	}

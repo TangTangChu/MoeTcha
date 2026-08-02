@@ -365,15 +365,28 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 	if sessionID == "" {
 		return VerifyResult{}, NewVerifyError(CodeEmptySession, "session_id 为空")
 	}
+	// MinVerifyInterval 节流「两次校验之间的最小间隔」（见配置说明）。
+	// 在 IncrementAttempt 之前读取上一次尝试时间：首次尝试回退到 CreatedAt，
+	// 后续尝试以上一次尝试时间为基准，从而真正节流重试（旧实现只比 CreatedAt，
+	// 首次通过后重试不受限）。与 IncrementAttempt 非原子，但单次验证码流程天然串行，
+	// 且有 MaxAttempts + 限流兜底，竞态可接受。
+	if s.Secure.MinVerifyInterval > 0 {
+		prev, ok := s.SessionStore.Get(sessionID)
+		if !ok {
+			return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
+		}
+		ref := prev.LastAttemptAt
+		if ref.IsZero() {
+			ref = prev.CreatedAt
+		}
+		if ref.Add(s.Secure.MinVerifyInterval).After(time.Now()) {
+			return VerifyResult{}, NewVerifyError(CodeTooFast, "验证过快，请稍后再试")
+		}
+	}
+
 	ss, ok := s.SessionStore.IncrementAttempt(sessionID)
 	if !ok {
 		return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
-	}
-
-	if s.Secure.MinVerifyInterval > 0 {
-		if ss.CreatedAt.Add(s.Secure.MinVerifyInterval).After(time.Now()) {
-			return VerifyResult{}, NewVerifyError(CodeTooFast, "验证过快，请稍后再试")
-		}
 	}
 
 	if s.IPPolicy.Enabled && s.IPPolicy.RequireMatch {

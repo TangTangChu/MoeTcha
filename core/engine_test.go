@@ -315,6 +315,49 @@ func TestGenerateGridChallengeFillsOnDistractorShortfall(t *testing.T) {
 	}
 }
 
+// TestGenerateGridChallengeCorrectMaxExceedsSize 回归：CorrectMax > Size 时不能 panic。
+// 历史 bug：correctPickCount 可能返回到 CorrectMax，若超过 Size，distGoal=Size-correctCount
+// 变负 -> distractors[:distGoal] 越界 panic。修复后 correctCount 被钳制到 cfg.Size。
+func TestGenerateGridChallengeCorrectMaxExceedsSize(t *testing.T) {
+	provider := &mockPackProvider{
+		packs: []Pack{{
+			ID:       "p",
+			PackName: "oversize correct_max",
+			TagDefs:  map[string]TagDef{"T": {Name: "T"}, "D": {Name: "D"}},
+			// 故意令 CorrectMax(5) > Size(3)
+			Grid: &GridConfig{Size: 3, CorrectMin: 2, CorrectMax: 5},
+			GridImages: []GridImageMeta{
+				{ID: "t1", File: "t1", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t1"},
+				{ID: "t2", File: "t2", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t2"},
+				{ID: "t3", File: "t3", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t3"},
+				{ID: "t4", File: "t4", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t4"},
+				{ID: "t5", File: "t5", Tags: []string{"T"}, PackID: "p", Path: "/tmp/t5"},
+				{ID: "d1", File: "d1", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d1"},
+				{ID: "d2", File: "d2", Tags: []string{"D"}, PackID: "p", Path: "/tmp/d2"},
+			},
+		}},
+	}
+	idx, err := NewIndexer(provider)
+	if err != nil {
+		t.Fatalf("NewIndexer: %v", err)
+	}
+	engine := NewEngine(idx)
+
+	// 多次运行覆盖 correctPickCount 的随机取值（含取到 4/5 而被钳制到 3 的情况）。
+	for run := 0; run < 50; run++ {
+		chal, err := engine.GenerateGridChallenge(DiffEasy)
+		if err != nil {
+			t.Fatalf("run %d: GenerateGridChallenge: %v (panic 越界?)", run, err)
+		}
+		if got := len(chal.Grid.CorrectImageIDs); got > 3 {
+			t.Fatalf("run %d: correct=%d, 应 <= Size(3)", run, got)
+		}
+		if got := len(chal.Grid.Images); got != 3 {
+			t.Fatalf("run %d: images=%d, want 3", run, got)
+		}
+	}
+}
+
 func TestGenerateChallengeInvalidType(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)

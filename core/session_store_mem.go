@@ -86,6 +86,7 @@ func (s *MemorySessionStore) IncrementAttempt(id string) (ChallengeSession, bool
 		return ChallengeSession{}, false
 	}
 	ss.Attempts++
+	ss.LastAttemptAt = s.clock()
 	s.sessions[id] = ss
 	return ss, true
 }
@@ -255,13 +256,15 @@ func (s *MemorySessionStore) VerifyToken(sessionID string, ctx VerifyContext, po
 			return fmt.Errorf("token session 不匹配")
 		}
 	}
+	// 先校验绑定（IP/UA），再消费单次 token。否则一个 IP/UA 不匹配的 token
+	// 会被烧掉，导致合法持有者（正确 IP/UA）再也无法使用。
+	if err := verifyTokenBinding(claims, ctx, policy); err != nil {
+		return err
+	}
 	if policy.SingleUse {
 		if !s.markTokenUsed(claims.ID, policy.TTL) {
 			return fmt.Errorf("token 已使用")
 		}
-	}
-	if err := verifyTokenBinding(claims, ctx, policy); err != nil {
-		return err
 	}
 	return nil
 }
