@@ -51,7 +51,7 @@ func (r *Router) registerRoutes() {
 			"method": c.Request.Method,
 		})
 	})
-	r.Engine.GET("/metrics", func(c *gin.Context) {
+	r.Engine.GET("/metrics", APIAuthMiddleware(r.APIAuth.Tokens), func(c *gin.Context) {
 		respondOK(c, http.StatusOK, core.MetricsInstance.Snapshot())
 	})
 

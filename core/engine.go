@@ -88,13 +88,13 @@ func (e *Engine) GenerateChallenge(kind ChallengeType, diff Difficulty) (*Challe
 		if rng.Intn(2) == 0 {
 			return e.GenerateGridChallenge(diff)
 		}
-		return e.GenerateClickChallenge()
+		return e.GenerateClickChallenge(diff)
 	}
 	if kind == ChallengeGrid {
 		return e.GenerateGridChallenge(diff)
 	}
 	if kind == ChallengeClick {
-		return e.GenerateClickChallenge()
+		return e.GenerateClickChallenge(diff)
 	}
 	return nil, fmt.Errorf("未知挑战类型: %s", kind)
 }
@@ -312,7 +312,7 @@ func hasAnyTag(tags []string, targetSet map[string]struct{}) bool {
 
 // --- Click ---
 
-func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
+func (e *Engine) GenerateClickChallenge(diff Difficulty) (*ChallengeInternal, error) {
 	rng := e.newRNG()
 	tags := e.idx.Load().GetAllClickTags()
 	if len(tags) == 0 {
@@ -370,6 +370,15 @@ func (e *Engine) GenerateClickChallenge() (*ChallengeInternal, error) {
 	default:
 		required = len(regions)
 		countForQuestion = 0 // 0 -> "所有"
+	}
+
+	// 难度调节：仅在 pack 未显式指定 Count（默认“点击全部”）时生效。
+	// easy 减少需点击数量（识别负担更轻）并在题面揭示具体数量，让用户知道何时停；
+	// medium/hard 维持“点击全部”。pack 显式指定 Count 时尊重作者意图，不被难度覆盖。
+	// 注：click 的难度维度较 grid 弱（无干扰图相似度可调），hard 与 medium 均为“点全部”。
+	if cfg.Count <= 0 && diff == DiffEasy && required > 1 {
+		required = (required + 1) / 2 // ceil(half)
+		countForQuestion = required   // 揭示具体数量
 	}
 
 	question := buildClickQuestion(cfg.Question, e.idx.Load().TagDisplay(tag), countForQuestion)

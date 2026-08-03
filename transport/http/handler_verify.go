@@ -10,7 +10,6 @@ import (
 
 type verifyRequest struct {
 	SessionID string                   `json:"session_id"`
-	Type      string                   `json:"type"`
 	Token     string                   `json:"token"`
 	Grid      *core.GridVerifyRequest  `json:"grid,omitempty"`
 	Click     *core.ClickVerifyRequest `json:"click,omitempty"`

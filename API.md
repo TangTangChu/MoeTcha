@@ -77,11 +77,11 @@ curl "http://localhost:8080/challenge"
 
 提交答案校验。**无论答对答错都返回 HTTP 200**，客户端读 `data.solved` 判断，不要靠 HTTP 状态码。只有请求级失败（会话过期、限流、绑定校验不过等）才返回 4xx。
 
-请求体：`session_id`、`token`、`type` 以及 `grid` 或 `click` 对象。`grid` 提交 `image_ids` 数组，`click` 提交 `points` 数组（含 `x`、`y`）。
+请求体：`session_id`、`token` 以及 `grid` 或 `click` 对象。`grid` 提交 `image_ids` 数组，`click` 提交 `points` 数组（含 `x`、`y`）。挑战类型由服务端按 session 判定，请求体不需要也不读取 `type` 字段。
 
 ```bash
 curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" \
-  -d '{"session_id":"...","token":"<signed-token>","type":"grid","grid":{"image_ids":["animals:cat_01"]}}'
+  -d '{"session_id":"...","token":"<signed-token>","grid":{"image_ids":["animals:cat_01"]}}'
 ```
 
 答对：
@@ -95,16 +95,18 @@ curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" 
 }
 ```
 
-答错（仍是 200，`data.solved=false`，`data.code` 给出原因）：
+答错（仍是 200，`data.solved=false`，`data.code` 给出原因；**不返回 `correct`/`total`**，避免泄露选对数量被消除法逐张替换破解）：
 
 ```json
 {
   "ok": true,
-  "data": {"solved": false, "code": "WRONG_COUNT", "reason": "数量不匹配", "correct": 1, "total": 2},
+  "data": {"solved": false, "code": "WRONG_COUNT", "reason": "数量不匹配"},
   "request_id": "a1b2c3d4",
   "timestamp": "2026-08-01T12:00:00Z"
 }
 ```
+
+`correct`/`total` 仅在 `solved=true` 时返回。点击题越界点不在响应里回显坐标，只进服务端日志。
 
 会话过期等请求级失败（4xx）：
 
@@ -117,7 +119,7 @@ curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" 
 }
 ```
 
-Click 挑战：题目返回的 `click.required` 表示需点击的目标数量，`question` 用 `{count}` 占位符提示。点击数必须正好等于 `required`，每个点需落在不同目标区域内。`required` 为 0 表示需点击全部匹配区域。
+Click 挑战：题目返回的 `click.required` 表示需点击的目标数量，`question` 用 `{count}` 占位符提示（`required>0` 显示具体数量，否则显示「所有」）。点击数必须正好等于 `required`，每个点需落在不同目标区域内。响应里的 `required` 始终是具体正数；「0 表示全部」仅是服务端对未配置场景的内部回退，客户端不会收到 0。难度（`CAPTCHA_DIFFICULTY`）对 grid 调节干扰图相似度；对 click，pack 未显式配置 `count` 时 easy 会减少需点击数量并在题面揭示具体数量，medium/hard 维持点击全部（click 的难度维度弱于 grid，hard 与 medium 均为「点全部」）。
 
 ## GET /asset/:key
 
@@ -197,7 +199,7 @@ curl "http://localhost:8080/asset/a1b2c3d4" --output image.webp
 
 ## GET /metrics
 
-返回累计计数快照（`data` 内）：
+返回累计计数快照（`data` 内）。鉴权同 `/grid/generate`：配置了 `API_TOKENS` 时需 `Authorization: Bearer <token>` 或 `X-API-Token: <token>`；未配置时开放。
 
 ```json
 {

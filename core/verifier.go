@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"sort"
 )
 
@@ -21,11 +20,13 @@ type ClickVerifyRequest struct {
 // VerifyResult 是验证码本身的判定结果，与「请求是否可处理」无关。
 // 请求级失败（会话过期、限流等）走 VerifyError，不会进入这里。
 type VerifyResult struct {
-	Solved  bool   `json:"solved"`
-	Code    string `json:"code,omitempty"`
-	Reason  string `json:"reason,omitempty"`
-	Correct int    `json:"correct"`
-	Total   int    `json:"total"`
+	Solved bool   `json:"solved"`
+	Code   string `json:"code,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Correct/Total 仅在 Solved=true 时回填。失败时回填会泄露“选对几个/答案共几个”，
+	// 配合重试可被消除法逐张替换破解，故失败只返回 {solved:false, code, reason}。
+	Correct int `json:"correct,omitempty"`
+	Total   int `json:"total,omitempty"`
 }
 
 // 请求级失败码。Verify 拿到这些情形时返回 VerifyError，
@@ -85,13 +86,13 @@ func VerifyGrid(chal *ChallengeInternal, req GridVerifyRequest) VerifyResult {
 	}
 
 	if len(req.ImageIDs) == 0 {
-		return VerifyResult{Solved: false, Code: CodeNoSelection, Reason: "未选择图片", Total: len(correctSet)}
+		return VerifyResult{Solved: false, Code: CodeNoSelection, Reason: "未选择图片"}
 	}
 
 	selected := make(map[string]struct{}, len(req.ImageIDs))
 	for _, id := range req.ImageIDs {
 		if id == "" {
-			return VerifyResult{Solved: false, Code: CodeEmptyImageID, Reason: "存在空图片ID", Total: len(correctSet)}
+			return VerifyResult{Solved: false, Code: CodeEmptyImageID, Reason: "存在空图片ID"}
 		}
 		selected[id] = struct{}{}
 	}
@@ -104,11 +105,11 @@ func VerifyGrid(chal *ChallengeInternal, req GridVerifyRequest) VerifyResult {
 	}
 
 	if len(selected) != len(correctSet) {
-		return VerifyResult{Solved: false, Code: CodeWrongCount, Reason: "数量不匹配", Correct: correct, Total: len(correctSet)}
+		return VerifyResult{Solved: false, Code: CodeWrongCount, Reason: "数量不匹配"}
 	}
 
 	if correct != len(correctSet) {
-		return VerifyResult{Solved: false, Code: CodeWrongSelection, Reason: "包含错误选项", Correct: correct, Total: len(correctSet)}
+		return VerifyResult{Solved: false, Code: CodeWrongSelection, Reason: "包含错误选项"}
 	}
 
 	return VerifyResult{Solved: true, Correct: correct, Total: len(correctSet)}
@@ -130,25 +131,27 @@ func VerifyClick(chal *ChallengeInternal, req ClickVerifyRequest) VerifyResult {
 		required = len(regions)
 	}
 
+	// 失败不回填 Correct/Total（见 VerifyResult 注释）。
 	if len(req.Points) == 0 {
-		return VerifyResult{Solved: false, Code: CodeNoPoints, Reason: "未提供点击点", Total: required}
+		return VerifyResult{Solved: false, Code: CodeNoPoints, Reason: "未提供点击点"}
 	}
 
 	matched := make(map[int]struct{})
 	for _, p := range req.Points {
 		idx := hitRegionIndex(regions, p)
 		if idx < 0 {
-			return VerifyResult{Solved: false, Code: CodePointOutOfRegion, Reason: fmt.Sprintf("点击点不在目标区域 x=%d y=%d", p.X, p.Y), Total: required}
+			// 不在响应里回显坐标，避免给攻击者微调线索；坐标由 Service 写进服务端日志。
+			return VerifyResult{Solved: false, Code: CodePointOutOfRegion, Reason: "点击点不在目标区域内"}
 		}
 		matched[idx] = struct{}{}
 	}
 
 	if len(req.Points) != required {
-		return VerifyResult{Solved: false, Code: CodeWrongClickCount, Reason: "点击数量不匹配", Correct: len(matched), Total: required}
+		return VerifyResult{Solved: false, Code: CodeWrongClickCount, Reason: "点击数量不匹配"}
 	}
 
 	if len(matched) != len(req.Points) {
-		return VerifyResult{Solved: false, Code: CodeDuplicateRegion, Reason: "存在重复点击的区域", Correct: len(matched), Total: required}
+		return VerifyResult{Solved: false, Code: CodeDuplicateRegion, Reason: "存在重复点击的区域"}
 	}
 
 	return VerifyResult{Solved: true, Correct: len(matched), Total: required}

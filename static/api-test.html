@@ -604,8 +604,8 @@ function submitManual(){
   apiCall({method:"POST", path:"/verify", body, label:"POST /verify (manual)"}).then(renderVerifyResult);
 }
 function manualBody(c){
-  if(c.type==="grid") return {session_id:c.session_id, token:c.token, type:"grid", grid:{image_ids:(c.grid?c.grid.images.map(i=>i.image_id):[])}};
-  return {session_id:c.session_id, token:c.token, type:"click", click:{points:clickPoints.slice()}};
+  if(c.type==="grid") return {session_id:c.session_id, token:c.token, grid:{image_ids:(c.grid?c.grid.images.map(i=>i.image_id):[])}};
+  return {session_id:c.session_id, token:c.token, click:{points:clickPoints.slice()}};
 }
 function renderVerifyResult(rec){
   const d = rec.respBody && rec.respBody.data;

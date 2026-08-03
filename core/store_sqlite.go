@@ -411,7 +411,7 @@ func (s *SQLiteSessionStore) markTokenUsed(id string, ttl time.Duration) bool {
 	}
 	now := s.clock()
 	if ttl <= 0 {
-		return false
+		ttl = 2 * time.Minute // 与 buildTokenClaims 的兜底一致，避免 SingleUse 永远失败
 	}
 	exp := now.Add(ttl)
 	if exp.Before(now) {

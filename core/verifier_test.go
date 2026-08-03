@@ -35,7 +35,7 @@ func TestVerifyGrid(t *testing.T) {
 			name:    "数量不足",
 			req:     GridVerifyRequest{ImageIDs: []string{"a:cat1"}},
 			wantOK:  false,
-			wantCor: 1,
+			wantCor: 1, // 仅为文档意图，失败时不再回填，断言见下方
 			wantTot: 2,
 		},
 		{
@@ -74,12 +74,7 @@ func TestVerifyGrid(t *testing.T) {
 			if result.Solved != tt.wantOK {
 				t.Errorf("Solved = %v, want %v (reason: %s)", result.Solved, tt.wantOK, result.Reason)
 			}
-			if result.Correct != tt.wantCor {
-				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)
-			}
-			if result.Total != tt.wantTot {
-				t.Errorf("Total = %d, want %d", result.Total, tt.wantTot)
-			}
+			assertResultCounts(t, result, tt.wantOK, tt.wantCor, tt.wantTot)
 		})
 	}
 }
@@ -151,8 +146,8 @@ func TestVerifyClick(t *testing.T) {
 			wantTot: 2,
 		},
 		{
-			name: "空点击",
-			req: ClickVerifyRequest{Points: []ClickPoint{}},
+			name:    "空点击",
+			req:     ClickVerifyRequest{Points: []ClickPoint{}},
 			wantOK:  false,
 			wantCor: 0,
 			wantTot: 2,
@@ -165,12 +160,7 @@ func TestVerifyClick(t *testing.T) {
 			if result.Solved != tt.wantOK {
 				t.Errorf("Solved = %v, want %v (reason: %s)", result.Solved, tt.wantOK, result.Reason)
 			}
-			if result.Correct != tt.wantCor {
-				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)
-			}
-			if result.Total != tt.wantTot {
-				t.Errorf("Total = %d, want %d", result.Total, tt.wantTot)
-			}
+			assertResultCounts(t, result, tt.wantOK, tt.wantCor, tt.wantTot)
 		})
 	}
 }
@@ -264,21 +254,16 @@ func TestVerifyClickWithCount(t *testing.T) {
 			if result.Solved != tt.wantOK {
 				t.Errorf("Solved = %v, want %v (reason: %s)", result.Solved, tt.wantOK, result.Reason)
 			}
-			if result.Correct != tt.wantCor {
-				t.Errorf("Correct = %d, want %d", result.Correct, tt.wantCor)
-			}
-			if result.Total != tt.wantTot {
-				t.Errorf("Total = %d, want %d", result.Total, tt.wantTot)
-			}
+			assertResultCounts(t, result, tt.wantOK, tt.wantCor, tt.wantTot)
 		})
 	}
 }
 
 func TestBuildClickQuestion(t *testing.T) {
 	tests := []struct {
-		tmpl   string
-		count  int
-		want   string
+		tmpl  string
+		count int
+		want  string
 	}{
 		{"请点击图中{count}「{tag}」", 0, "请点击图中所有「猫」"},
 		{"请点击图中{count}「{tag}」", 3, "请点击图中3个「猫」"},
@@ -291,5 +276,26 @@ func TestBuildClickQuestion(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("buildClickQuestion(%q,%d) = %q, want %q", tt.tmpl, tt.count, got, tt.want)
 		}
+	}
+}
+
+// assertResultCounts 统一断言失败时 Correct/Total 不得回填（防答案泄露），
+// 成功时回填 wantCor/wantTot。
+func assertResultCounts(t *testing.T, result VerifyResult, wantOK bool, wantCor, wantTot int) {
+	t.Helper()
+	if wantOK {
+		if result.Correct != wantCor {
+			t.Errorf("Correct = %d, want %d", result.Correct, wantCor)
+		}
+		if result.Total != wantTot {
+			t.Errorf("Total = %d, want %d", result.Total, wantTot)
+		}
+		return
+	}
+	if result.Correct != 0 {
+		t.Errorf("失败时 Correct 必须为 0（防泄露），得到 %d", result.Correct)
+	}
+	if result.Total != 0 {
+		t.Errorf("失败时 Total 必须为 0（防泄露），得到 %d", result.Total)
 	}
 }

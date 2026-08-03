@@ -361,32 +361,33 @@ func (s *Service) checkRateLimit(ctx VerifyContext) error {
 // 返回 (VerifyResult, nil) 表示请求已被正常判定，result.Solved 表示通过与否。
 // 返回 (_, *VerifyError) 表示请求级失败（会话过期、限流、绑定校验不过等），
 // 此时根本没进入判定，handler 据错误码映射 HTTP 状态码。
+//
+// 校验顺序：先 Get 一次会话供节流/绑定校验复用，再做全部请求级校验
+// （IP/UA/限流/IP 反滥用/token），全部通过后才 IncrementAttempt 消耗本次尝试。
+// 这样 token/IP/UA 不匹配等请求级失败不会烧掉合法用户的尝试次数
+// （与 TokenVerifier 先校验绑定再消费单次 token 的思路一致）。
 func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *ClickVerifyRequest, ctx VerifyContext) (VerifyResult, error) {
 	if sessionID == "" {
 		return VerifyResult{}, NewVerifyError(CodeEmptySession, "session_id 为空")
 	}
-	// MinVerifyInterval 节流「两次校验之间的最小间隔」（见配置说明）。
-	// 在 IncrementAttempt 之前读取上一次尝试时间：首次尝试回退到 CreatedAt，
-	// 后续尝试以上一次尝试时间为基准，从而真正节流重试（旧实现只比 CreatedAt，
-	// 首次通过后重试不受限）。与 IncrementAttempt 非原子，但单次验证码流程天然串行，
-	// 且有 MaxAttempts + 限流兜底，竞态可接受。
+
+	// 取一次 session，供 MinVerifyInterval 与绑定校验复用（避免重复 Get）。
+	ss, ok := s.SessionStore.Get(sessionID)
+	if !ok {
+		return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
+	}
+
+	// MinVerifyInterval 节流“两次校验之间的最小间隔”。首次以 CreatedAt 为基准，
+	// 重试以上一次尝试时间 LastAttemptAt 为基准。与 IncrementAttempt 非原子，
+	// 但单次验证码流程天然串行，且有 MaxAttempts + 限流兜底，竞态可接受。
 	if s.Secure.MinVerifyInterval > 0 {
-		prev, ok := s.SessionStore.Get(sessionID)
-		if !ok {
-			return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
-		}
-		ref := prev.LastAttemptAt
+		ref := ss.LastAttemptAt
 		if ref.IsZero() {
-			ref = prev.CreatedAt
+			ref = ss.CreatedAt
 		}
 		if ref.Add(s.Secure.MinVerifyInterval).After(time.Now()) {
 			return VerifyResult{}, NewVerifyError(CodeTooFast, "验证过快，请稍后再试")
 		}
-	}
-
-	ss, ok := s.SessionStore.IncrementAttempt(sessionID)
-	if !ok {
-		return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
 	}
 
 	if s.IPPolicy.Enabled && s.IPPolicy.RequireMatch {
@@ -404,6 +405,8 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 		}
 	}
 
+	// IP 级反滥用（尝试次数/失败率/限流）：统计所有到达 verify 的请求，
+	// 包括随后在请求级校验失败的请求——攻击者刷坏 token 本就应触发 IP 封禁。
 	if s.Secure.MaxAttemptsPerIP > 0 && s.Secure.MaxAttemptsWindow > 0 {
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			if !tracker.AllowAttempt(ctx.IP, s.Secure.MaxAttemptsPerIP, s.Secure.MaxAttemptsWindow) {
@@ -430,11 +433,18 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 	if s.Secure.Token.Enabled {
 		if verifier, ok := s.SessionStore.(TokenVerifier); ok {
 			if err := verifier.VerifyToken(sessionID, ctx, s.Secure.Token); err != nil {
-				rid := ctx.RequestID
-				slog.Warn("token_verify_failed", "request_id", rid, "session_id", sessionID, "error", err.Error())
+				slog.Warn("token_verify_failed", "request_id", ctx.RequestID, "session_id", sessionID, "error", err.Error())
 				return VerifyResult{}, NewVerifyError(CodeTokenInvalid, "Token 无效或已过期")
 			}
 		}
+	}
+
+	// 所有请求级校验通过，现在才消耗本次尝试。
+	// getLocked 会在 Attempts>=MaxAttempts 时删除 session 并返回 not found，
+	// 所以这里 not found 涵盖“尝试次数耗尽”。
+	ss, ok = s.SessionStore.IncrementAttempt(sessionID)
+	if !ok {
+		return VerifyResult{}, NewVerifyError(CodeSessionExpired, "会话不存在或已过期")
 	}
 
 	chal := ss.Challenge
@@ -473,7 +483,14 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 			_ = s.SessionStore.Delete(sessionID)
 		}
 		MetricsInstance.VerificationsFail.Add(1)
-		slog.Info("verify_fail", "session_id", sessionID, "code", result.Code, "reason", result.Reason)
+		// 越界点击坐标不进响应（防泄露），只写入日志便于排查。
+		logArgs := []any{"session_id", sessionID, "type", string(chal.Type), "code", result.Code, "reason", result.Reason}
+		if chal.Type == ChallengeClick && click != nil {
+			logArgs = append(logArgs, "points", click.Points)
+		} else if grid != nil {
+			logArgs = append(logArgs, "selected", grid.ImageIDs)
+		}
+		slog.Info("verify_fail", logArgs...)
 	}
 
 	return result, nil

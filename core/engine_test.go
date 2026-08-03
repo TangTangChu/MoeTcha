@@ -207,7 +207,7 @@ func TestGenerateClickChallenge(t *testing.T) {
 	idx := buildTestIndexer(t)
 	engine := NewEngine(idx)
 
-	chal, err := engine.GenerateClickChallenge()
+	chal, err := engine.GenerateClickChallenge(DiffMedium)
 	if err != nil {
 		t.Fatalf("GenerateClickChallenge failed: %v", err)
 	}
@@ -489,7 +489,42 @@ func TestGenerateClickChallengeCount(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			idx := buildClickCountIndexer(t, c.count)
 			engine := NewEngine(idx)
-			chal, err := engine.GenerateClickChallenge()
+			chal, err := engine.GenerateClickChallenge(DiffMedium)
+			if err != nil {
+				t.Fatalf("GenerateClickChallenge failed: %v", err)
+			}
+			if chal.Click == nil || chal.Click.Required != c.wantReq {
+				got := 0
+				if chal.Click != nil {
+					got = chal.Click.Required
+				}
+				t.Errorf("Required = %d, want %d", got, c.wantReq)
+			}
+			if !strings.Contains(chal.Question, c.wantContain) {
+				t.Errorf("Question = %q, want substring %q", chal.Question, c.wantContain)
+			}
+		})
+	}
+}
+
+// TestGenerateClickChallengeDifficultyEasy 验证 pack 未指定 Count（默认“点击全部”）时，
+// DiffEasy 把 required 减半并在题面揭示数量，DiffMedium 维持“点击全部”。
+func TestGenerateClickChallengeDifficultyEasy(t *testing.T) {
+	cases := []struct {
+		name        string
+		diff        Difficulty
+		wantReq     int
+		wantContain string
+	}{
+		{"easy 减半并揭示数量", DiffEasy, 1, "1个"},
+		{"medium 维持全部", DiffMedium, 2, "所有"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// buildClickCountIndexer(t, 0) 提供一张含 2 个「猫」区域、Count=0 的图。
+			idx := buildClickCountIndexer(t, 0)
+			engine := NewEngine(idx)
+			chal, err := engine.GenerateClickChallenge(c.diff)
 			if err != nil {
 				t.Fatalf("GenerateClickChallenge failed: %v", err)
 			}
