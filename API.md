@@ -134,6 +134,14 @@ curl "http://localhost:8080/asset/a1b2c3d4" --output image.webp
 
 失败返回统一错误信封（如 404 `NOT_FOUND`）。
 
+临时资产采用 TTL 生命周期：
+
+- 生成后 `expires_at` 之前可**反复访问**，访问次数不限；访问本身不会触发删除。
+- 过期后第一次访问返回 404 `NOT_FOUND`，与 key 不存在的表现一致（客户端无需区分）。
+- 默认 TTL 为 `CAPTCHA_TTL`（默认 2 分钟）；`/grid/generate` 的 `temporary_ttl_seconds` 可覆盖，最长 86400 秒。
+
+> `/asset/:key` **无需鉴权**：TTL 窗口内拿到 URL 即可访问图片。若生成内容敏感，应在网关或鉴权层限制访问，或缩短 TTL。
+
 ## POST /grid/generate
 
 从已加载 Grid 素材合成一张带编号的 WebP 网格图，写入临时 asset。
@@ -165,7 +173,7 @@ curl "http://localhost:8080/asset/a1b2c3d4" --output image.webp
 - `difficulty`：`easy`/`medium`/`hard`。
 - `seed`：随机种子，便于复现。
 - `apply_renderer`：是否应用渲染/干扰管线，默认 `true`。
-- `temporary_ttl_seconds`：临时 asset 生命周期，0 用默认 TTL，最大 86400。
+- `temporary_ttl_seconds`：临时 asset 生命周期（秒），0 用默认 TTL（`CAPTCHA_TTL`），最大 86400；过期语义见「GET /asset/:key」一节。
 
 成功响应（`data` 内，`correct_numbers` 与每个 tile 的 `number` 均为 1-based）：
 
