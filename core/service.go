@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/draw"
 	"log/slog"
+	"net"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,9 @@ type Service struct {
 	GridWebPMethod  int
 	gridSem         chan struct{}
 	gridSemOnce     sync.Once
+
+	// TrustedNets 由 TRUSTED_NETWORKS 解析而来，命中者豁免传输层限制。
+	TrustedNets []*net.IPNet
 
 	// diffAtomic 是运行期难度的原子槽：SetDifficulty 写入，difficulty() 优先读它，
 	// 未设置过（初始字段）时回落 Difficulty。
@@ -152,6 +156,7 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 	if s.Engine == nil || s.SessionStore == nil || s.AssetStore == nil || s.Renderer == nil {
 		return nil, fmt.Errorf("service 组件未初始化")
 	}
+	ctx.Trusted = s.trusted(ctx.IP)
 	if err := s.checkRateLimit(ctx); err != nil {
 		return nil, err
 	}
@@ -173,7 +178,8 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 		if ctx.IP == "" {
 			return nil, fmt.Errorf("缺少 IP")
 		}
-		if s.IPPolicy.MaxActive > 0 {
+		// 可信网络不限同 IP 并发会话数。
+		if !ctx.Trusted && s.IPPolicy.MaxActive > 0 {
 			if st, ok := s.SessionStore.(IPSessionTracker); ok {
 				if err := st.ValidateActiveCount(ctx.IP, s.IPPolicy.MaxActive); err != nil {
 					return nil, err
@@ -181,7 +187,7 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 			}
 		}
 	}
-	if s.Secure.RequireUserAgent && ctx.UserAgent == "" {
+	if !ctx.Trusted && s.Secure.RequireUserAgent && ctx.UserAgent == "" {
 		return nil, fmt.Errorf("缺少 User-Agent")
 	}
 
@@ -349,6 +355,9 @@ func (s *Service) checkRateLimit(ctx VerifyContext) error {
 	if s == nil || !s.Secure.RateLimit.Enabled || s.SessionStore == nil {
 		return nil
 	}
+	if ctx.Trusted {
+		return nil
+	}
 	if limiter, ok := s.SessionStore.(RateLimiter); ok {
 		if !limiter.Allow(ctx, s.Secure.RateLimit) && !s.Secure.RateLimit.SoftReject {
 			return ErrRateLimited
@@ -371,6 +380,8 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 		return VerifyResult{}, NewVerifyError(CodeEmptySession, "session_id 为空")
 	}
 
+	ctx.Trusted = s.trusted(ctx.IP)
+
 	// 取一次 session，供 MinVerifyInterval 与绑定校验复用（避免重复 Get）。
 	ss, ok := s.SessionStore.Get(sessionID)
 	if !ok {
@@ -380,7 +391,7 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 	// MinVerifyInterval 节流“两次校验之间的最小间隔”。首次以 CreatedAt 为基准，
 	// 重试以上一次尝试时间 LastAttemptAt 为基准。与 IncrementAttempt 非原子，
 	// 但单次验证码流程天然串行，且有 MaxAttempts + 限流兜底，竞态可接受。
-	if s.Secure.MinVerifyInterval > 0 {
+	if !ctx.Trusted && s.Secure.MinVerifyInterval > 0 {
 		ref := ss.LastAttemptAt
 		if ref.IsZero() {
 			ref = ss.CreatedAt
@@ -390,13 +401,13 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 		}
 	}
 
-	if s.IPPolicy.Enabled && s.IPPolicy.RequireMatch {
+	if !ctx.Trusted && s.IPPolicy.Enabled && s.IPPolicy.RequireMatch {
 		if ctx.IP == "" || ss.IP == "" || ctx.IP != ss.IP {
 			return VerifyResult{}, NewVerifyError(CodeIPMismatch, "IP 与签发时不一致")
 		}
 	}
 
-	if s.Secure.RequireUserAgent || s.Secure.RequireSameUserAgent {
+	if !ctx.Trusted && (s.Secure.RequireUserAgent || s.Secure.RequireSameUserAgent) {
 		if ctx.UserAgent == "" || ss.UserAgent == "" {
 			return VerifyResult{}, NewVerifyError(CodeMissingUA, "缺少 User-Agent")
 		}
@@ -405,23 +416,22 @@ func (s *Service) Verify(sessionID string, grid *GridVerifyRequest, click *Click
 		}
 	}
 
-	// IP 级反滥用（尝试次数/失败率/限流）：统计所有到达 verify 的请求，
-	// 包括随后在请求级校验失败的请求——攻击者刷坏 token 本就应触发 IP 封禁。
-	if s.Secure.MaxAttemptsPerIP > 0 && s.Secure.MaxAttemptsWindow > 0 {
+	// IP 级反滥用（尝试次数/失败率/限流）：可信网络豁免。
+	if !ctx.Trusted && s.Secure.MaxAttemptsPerIP > 0 && s.Secure.MaxAttemptsWindow > 0 {
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			if !tracker.AllowAttempt(ctx.IP, s.Secure.MaxAttemptsPerIP, s.Secure.MaxAttemptsWindow) {
 				return VerifyResult{}, NewVerifyError(CodeTooManyAttempts, "IP 尝试次数过多")
 			}
 		}
 	}
-	if s.Secure.MaxFailRatio > 0 && s.Secure.FailRatioWindow > 0 {
+	if !ctx.Trusted && s.Secure.MaxFailRatio > 0 && s.Secure.FailRatioWindow > 0 {
 		if tracker, ok := s.SessionStore.(IPAttemptTracker); ok {
 			if !tracker.AllowFailRatio(ctx.IP, s.Secure.MaxFailRatio, s.Secure.FailRatioWindow) {
 				return VerifyResult{}, NewVerifyError(CodeHighFailRatio, "失败率过高")
 			}
 		}
 	}
-	if s.Secure.RateLimit.Enabled {
+	if !ctx.Trusted && s.Secure.RateLimit.Enabled {
 		if limiter, ok := s.SessionStore.(RateLimiter); ok {
 			if !limiter.Allow(ctx, s.Secure.RateLimit) {
 				if !s.Secure.RateLimit.SoftReject {
@@ -501,6 +511,8 @@ type VerifyContext struct {
 	UserAgent string
 	Token     string
 	RequestID string
+	// Trusted 标记本次请求来自可信网络，豁免传输层反滥用与绑定校验。
+	Trusted bool
 }
 
 type IPSessionTracker interface {

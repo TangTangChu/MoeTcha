@@ -28,7 +28,7 @@ func (r *Router) handleVerify(c *gin.Context) {
 	}
 
 	ctx := core.VerifyContext{
-		IP:        clientIP(c),
+		IP:        resolveClientIP(c, r.IPResolve),
 		UserAgent: c.GetHeader("User-Agent"),
 		Token:     req.Token,
 		RequestID: requestIDOf(c),

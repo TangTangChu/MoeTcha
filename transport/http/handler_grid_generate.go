@@ -23,7 +23,7 @@ func (r *Router) handleGridGenerate(c *gin.Context) {
 	}
 
 	result, err := r.Service.GenerateGridImage(req, core.VerifyContext{
-		IP:        clientIP(c),
+		IP:        resolveClientIP(c, r.IPResolve),
 		UserAgent: c.GetHeader("User-Agent"),
 		RequestID: requestIDOf(c),
 	})

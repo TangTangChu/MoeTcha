@@ -8,11 +8,13 @@ import (
 
 type Config struct {
 	HTTPPort   string
+	HTTPHost   string
 	LogLevel   string
 	Service    ServiceConfig
 	Storage    StorageConfig
 	SQLitePath string
 	CORS       CORSConfig
+	IPResolve  IPResolveConfig
 	Render     RenderConfig
 }
 
@@ -36,6 +38,12 @@ type CORSConfig struct {
 	AllowedOrigins []string
 }
 
+// IPResolveConfig 控制客户端 IP 提取来源。
+type IPResolveConfig struct {
+	Source   string // direct | x-forwarded-for | x-real-ip
+	XFFIndex int    // 0=最左/原始客户端，-1=最右/上一跳
+}
+
 type ServiceConfig struct {
 	TTL         time.Duration
 	MaxAttempts int
@@ -56,6 +64,10 @@ type ServiceConfig struct {
 	// GridWebPMethod 控制 /grid/generate 合成图的 libwebp effort（0=最快，6=最慢/质量最高）。
 	// 0 表示自动：按合成图像素数选档（小图 4 / 中图 2 / 大图 1），避免大网格编码耗时几秒。
 	GridWebPMethod int
+
+	// TrustedNetworks 是放行反滥用与绑定校验的可信网络列表（CIDR / 裸 IP / private 关键字）。
+	// 留空保持原严格行为。
+	TrustedNetworks []string
 }
 
 type APIAuthConfig struct {
@@ -121,7 +133,7 @@ func Load(opts LoadOptions) (Config, []ResolvedValue, error) {
 
 // LoadConfig 从进程环境加载配置。
 //
-// 刻意不读取 .env 文件：Go 测试以包目录为工作目录，若在此自动加载，
+// 不读取 .env 文件：Go 测试以包目录为工作目录，若在此自动加载，
 // core 包的测试会隐式依赖 core/.env 是否存在而失去 hermetic 性。
 // .env 的加载由 CLI 层显式完成。
 func LoadConfig() (Config, error) {
@@ -180,6 +192,14 @@ func ValidateConfig(cfg Config) error {
 	}
 	if cfg.Render.Quality < 0 || cfg.Render.Quality > 100 {
 		return fmt.Errorf("RENDER_QUALITY 必须在 0~100（0 表示使用默认 80）")
+	}
+	if _, err := ParseTrustedNetworks(cfg.Service.TrustedNetworks); err != nil {
+		return fmt.Errorf("TRUSTED_NETWORKS: %w", err)
+	}
+	switch cfg.IPResolve.Source {
+	case "", "direct", "x-forwarded-for", "x-real-ip":
+	default:
+		return fmt.Errorf("CLIENT_IP_SOURCE 必须为 direct / x-forwarded-for / x-real-ip")
 	}
 	return nil
 }

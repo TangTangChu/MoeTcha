@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ func runServe(args []string) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	envFile := fs.String("env-file", defaultEnvFile, "指定 .env 文件路径")
 	port := fs.String("port", "", "覆盖 HTTP_PORT")
+	host := fs.String("host", "", "覆盖 HTTP_HOST")
 	logLevel := fs.String("log-level", "", "覆盖 LOG_LEVEL")
 	consoleMode := fs.String("console", "auto", "运行期控制台：auto（stdin 为终端时启用）/ on（强制）/ off（关闭）")
 	var sets multiFlag
@@ -45,6 +47,7 @@ func runServe(args []string) int {
 		return 2
 	}
 	overrides = withOverride(overrides, "HTTP_PORT", *port)
+	overrides = withOverride(overrides, "HTTP_HOST", *host)
 	overrides = withOverride(overrides, "LOG_LEVEL", *logLevel)
 
 	cfg, resolved, err := loadConfig(*envFile, flagWasSet(fs, "env-file"), overrides, false)
@@ -68,7 +71,7 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 		Strict:       true,
 	}
 
-	// 只扫一次磁盘：LoadPacks 之后直接 BuildIndexer，不再让 NewIndexer 重复读盘。
+	// 只扫一次磁盘：LoadPacks 之后直接 BuildIndexer，省去 NewIndexer 的重复读盘。
 	packs, err := provider.LoadPacks()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "加载 packs 失败：%v\n", err)
@@ -107,6 +110,7 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 	}()
 
 	renderer := core.NewRenderer(config.Render)
+	trustedNets, _ := core.ParseTrustedNetworks(config.Service.TrustedNetworks)
 	service := &core.Service{
 		Engine:          engine,
 		SessionStore:    sessionStore,
@@ -121,6 +125,7 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 		MaxSourcePixels: config.Service.MaxSourceImagePixels,
 		RenderQuality:   config.Render.Quality,
 		GridWebPMethod:  config.Service.GridWebPMethod,
+		TrustedNets:     trustedNets,
 	}
 
 	// ReleaseMode 抑制 gin 启动时那一串 [GIN-debug] 路由注册输出与
@@ -128,8 +133,9 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 	// 请求日志由 LoggingMiddleware 独立记录，不受此开关影响。
 	httptransport.SetReleaseMode()
 	router := httptransport.NewRouter(service, assetStore, httptransport.RouterConfig{
-		APIAuth: config.Service.APIAuth,
-		CORS:    config.CORS,
+		APIAuth:   config.Service.APIAuth,
+		CORS:      config.CORS,
+		IPResolve: config.IPResolve,
 	})
 
 	// 控制台默认在 stdin 为终端时启用；docker run -i 等场景用 --console on 强制。
@@ -146,7 +152,18 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 		pad("素材包", 6), len(packs), cts.GridImages, cts.GridTags, cts.ClickImages, cts.ClickTags)
 	fmt.Printf("  %s %s\n", pad("存储", 6), storage)
 	fmt.Printf("  %s %s\n", pad("难度", 6), config.Service.Difficulty)
-	fmt.Printf("  %s http://localhost:%s\n", pad("监听", 6), config.HTTPPort)
+	if len(trustedNets) > 0 {
+		fmt.Printf("  %s 已启用（%d 个网段）\n", pad("可信网络", 6), len(trustedNets))
+	}
+	bindHost := config.HTTPHost
+	if bindHost == "" {
+		bindHost = "0.0.0.0"
+	}
+	accessHost := config.HTTPHost
+	if accessHost == "" {
+		accessHost = "localhost"
+	}
+	fmt.Printf("  %s http://%s:%s\n", pad("监听", 6), bindHost, config.HTTPPort)
 	if consoleEnabled {
 		fmt.Printf("  %s 已启用\n", pad("控制台", 6))
 	} else {
@@ -158,8 +175,8 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 	if config.CORS.Enabled && corsAllowsAll(config.CORS.AllowedOrigins) {
 		fmt.Fprintln(os.Stderr, "  "+errStyle.yellow("警告：CORS_ALLOWED_ORIGINS=* 放行任意来源，生产环境请改为具体域名"))
 	}
-	ready := fmt.Sprintf("%s 服务已就绪  %s http://localhost:%s",
-		outStyle.green(glyphs.ok), glyphs.arrow, config.HTTPPort)
+	ready := fmt.Sprintf("%s 服务已就绪  %s http://%s:%s",
+		outStyle.green(glyphs.ok), glyphs.arrow, accessHost, config.HTTPPort)
 	if consoleEnabled {
 		ready += "（输入 help 查看命令）"
 	}
@@ -168,7 +185,7 @@ func serve(config core.Config, consoleMode string, resolved []core.ResolvedValue
 	// 捕获 Ctrl+C / SIGTERM 做优雅关闭：先 Shutdown 停止接收新连接并排空在途
 	// 请求，再让 serve() 正常返回——此时外层 defer sqliteStore.Close() 才会执行，
 	// SQLite 得以 checkpoint 落盘。直接被信号杀掉则这些 defer 不会跑。
-	srv := &http.Server{Addr: ":" + config.HTTPPort, Handler: router.Engine}
+	srv := &http.Server{Addr: net.JoinHostPort(config.HTTPHost, config.HTTPPort), Handler: router.Engine}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 

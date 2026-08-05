@@ -218,17 +218,19 @@ func formatDuration(d time.Duration) string {
 }
 
 // configSpecs 是全部配置项的唯一事实来源，顺序即 .env.example 的生成顺序。
-// 默认值逐字对应改造前 LoadConfig 中的字面量，不得随意变动。
+// 默认值即各配置项的字面量初值，不得随意变动。
 var configSpecs = []Spec{
 	// ── 服务 ──
 	specString(Spec{
 		Key: "HTTP_PORT", Section: "服务", Default: "8080",
 		Desc: "HTTP 监听端口",
 	}, func(c *Config) *string { return &c.HTTPPort }),
+	specString(Spec{
+		Key: "HTTP_HOST", Section: "服务", Default: "",
+		Desc: "HTTP 监听地址，留空表示监听所有网络接口",
+	}, func(c *Config) *string { return &c.HTTPHost }),
 
 	// ── 存储 ──
-	// STORAGE_BACKEND 刻意用 specString 而非 specEnum：它今天由 ValidateConfig
-	// 校验且不转小写，改成加载期枚举会挪动报错时机并破坏现有测试。
 	specString(Spec{
 		Key: "STORAGE_BACKEND", Section: "存储", Default: "memory",
 		Desc: "存储后端：memory 或 sqlite", Enum: []string{"memory", "sqlite"},
@@ -391,6 +393,23 @@ var configSpecs = []Spec{
 		Key: "CAPTCHA_RATE_LIMIT_SOFT_REJECT", Section: "限流", Default: "false",
 		Desc: "限流时是否软拒绝（返回提示而非直接断开）",
 	}, func(c *Config) *bool { return &c.Service.Secure.RateLimit.SoftReject }),
+
+	// ── 客户端 IP 解析 ──
+	specEnum(Spec{
+		Key: "CLIENT_IP_SOURCE", Section: "客户端 IP 解析", Default: "direct",
+		Desc: "客户端 IP 提取来源",
+		Enum: []string{"direct", "x-forwarded-for", "x-real-ip"},
+	}, func(c *Config) *string { return &c.IPResolve.Source }),
+	specInt(Spec{
+		Key: "CLIENT_IP_XFF_INDEX", Section: "客户端 IP 解析", Default: "0",
+		Desc: "X-Forwarded-For 取第几个元素：0=最左，-1=最右。越界或缺头回落直连 IP",
+	}, func(c *Config) *int { return &c.IPResolve.XFFIndex }),
+
+	// ── 可信网络 ──
+	specList(Spec{
+		Key: "TRUSTED_NETWORKS", Section: "可信网络", Default: "",
+		Desc: "可信网络列表（CIDR / 裸 IP / private 关键字）。命中者跳过 IP/UA 一致性、限流、IP 尝试上限与失败率、token 绑定；验证码完整性不受影响",
+	}, func(c *Config) *[]string { return &c.Service.TrustedNetworks }),
 
 	// ── 接口鉴权与资源限制 ──
 	specList(Spec{

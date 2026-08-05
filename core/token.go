@@ -95,6 +95,9 @@ func verifyToken(raw string, policy TokenPolicy) (tokenClaims, error) {
 }
 
 func verifyTokenBinding(claims tokenClaims, ctx VerifyContext, policy TokenPolicy) error {
+	if ctx.Trusted {
+		return nil
+	}
 	if policy.BindIP {
 		if claims.IP == "" {
 			return fmt.Errorf("token 缺少 IP 绑定")

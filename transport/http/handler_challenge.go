@@ -22,7 +22,7 @@ func (r *Router) handleChallenge(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 
 	kind := core.ChallengeType(req.Type)
-	ctx := core.VerifyContext{IP: clientIP(c), UserAgent: c.GetHeader("User-Agent"), RequestID: requestIDOf(c)}
+	ctx := core.VerifyContext{IP: resolveClientIP(c, r.IPResolve), UserAgent: c.GetHeader("User-Agent"), RequestID: requestIDOf(c)}
 	resp, err := r.Service.NewChallenge(kind, ctx)
 	if err != nil {
 		status, code, msg := classifyChallengeError(err)

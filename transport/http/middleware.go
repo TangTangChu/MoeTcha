@@ -22,7 +22,7 @@ func RequestIDMiddleware() gin.HandlerFunc {
 	}
 }
 
-func LoggingMiddleware() gin.HandlerFunc {
+func LoggingMiddleware(cfg core.IPResolveConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
@@ -32,7 +32,7 @@ func LoggingMiddleware() gin.HandlerFunc {
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
 			"duration_ms", time.Since(start).Milliseconds(),
-			"ip", c.ClientIP(),
+			"ip", resolveClientIP(c, cfg),
 		)
 	}
 }

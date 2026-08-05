@@ -8,16 +8,18 @@ import (
 )
 
 type RouterConfig struct {
-	APIAuth core.APIAuthConfig
-	CORS    core.CORSConfig
+	APIAuth   core.APIAuthConfig
+	CORS      core.CORSConfig
+	IPResolve core.IPResolveConfig
 }
 
 type Router struct {
-	Engine  *gin.Engine
-	Service *core.Service
-	Assets  core.AssetStore
-	APIAuth core.APIAuthConfig
-	CORS    core.CORSConfig
+	Engine    *gin.Engine
+	Service   *core.Service
+	Assets    core.AssetStore
+	APIAuth   core.APIAuthConfig
+	CORS      core.CORSConfig
+	IPResolve core.IPResolveConfig
 }
 
 func NewRouter(service *core.Service, assets core.AssetStore, cfg RouterConfig) *Router {
@@ -26,9 +28,9 @@ func NewRouter(service *core.Service, assets core.AssetStore, cfg RouterConfig) 
 	r.Use(RequestIDMiddleware())
 	r.Use(SecurityHeadersMiddleware())
 	r.Use(CORSMiddleware(cfg.CORS))
-	r.Use(LoggingMiddleware())
+	r.Use(LoggingMiddleware(cfg.IPResolve))
 
-	router := &Router{Engine: r, Service: service, Assets: assets, APIAuth: cfg.APIAuth, CORS: cfg.CORS}
+	router := &Router{Engine: r, Service: service, Assets: assets, APIAuth: cfg.APIAuth, CORS: cfg.CORS, IPResolve: cfg.IPResolve}
 	router.registerRoutes()
 	return router
 }
