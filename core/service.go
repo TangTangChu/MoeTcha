@@ -277,7 +277,7 @@ func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyCont
 	}
 
 	method := s.gridWebPMethod(composed.Bounds().Dx() * composed.Bounds().Dy())
-	bytes, err := render.EncodeWebPStrict(composed, plan.quality, method)
+	bytes, err := render.EncodeWebP(composed, plan.quality, method)
 	if err != nil {
 		return nil, fmt.Errorf("编码 Grid WebP 失败: %w", err)
 	}
@@ -586,7 +586,8 @@ func (s *Service) renderAndStore(path string, exp time.Time) (string, error) {
 			return "", err
 		}
 	}
-	bytes, err := render.EncodeWebP(img, s.renderQuality())
+	// 默认 effort 4（libwebp 默认值），与 /grid/generate 的 method 自适应同源。
+	bytes, err := render.EncodeWebP(img, int(s.renderQuality()), 4)
 	if err != nil {
 		return "", err
 	}
