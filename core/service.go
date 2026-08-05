@@ -15,7 +15,10 @@ import (
 	"moetcha/core/render"
 )
 
-var ErrRateLimited = errors.New("访问过于频繁")
+var (
+	ErrRateLimited          = errors.New("访问过于频繁")
+	ErrServiceUninitialized = errors.New("service 组件未初始化")
+)
 
 const (
 	defaultMaxSourcePixels    = 16_000_000
@@ -154,7 +157,7 @@ type ClickItemPublic struct {
 
 func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*ChallengeResponse, error) {
 	if s.Engine == nil || s.SessionStore == nil || s.AssetStore == nil || s.Renderer == nil {
-		return nil, fmt.Errorf("service 组件未初始化")
+		return nil, ErrServiceUninitialized
 	}
 	ctx.Trusted = s.trusted(ctx.IP)
 	if err := s.checkRateLimit(ctx); err != nil {
@@ -232,7 +235,7 @@ func (s *Service) NewChallenge(kind ChallengeType, ctx VerifyContext) (*Challeng
 // GenerateGridImage 生成带编号的单张 Grid WebP 图片，并将其作为临时 asset 保存。
 func (s *Service) GenerateGridImage(req GridImageGenerateRequest, ctx VerifyContext) (*GridImageGenerateResult, error) {
 	if s == nil || s.Engine == nil || s.AssetStore == nil {
-		return nil, fmt.Errorf("grid image service 组件未初始化")
+		return nil, ErrServiceUninitialized
 	}
 	if err := s.checkRateLimit(ctx); err != nil {
 		return nil, err

@@ -740,7 +740,7 @@ func normalizeGridRenderOptions(
 		applyRenderer = *req.ApplyRenderer
 	}
 	if req.TemporaryTTLSeconds < 0 || req.TemporaryTTLSeconds > 86400 {
-		return render.GridComposeOptions{}, 0, false, 0, gridImageRequestError("temporary_ttl_seconds 必须在 1~86400，或为 0 使用默认 TTL")
+		return render.GridComposeOptions{}, 0, false, 0, gridImageRequestError("temporary_ttl_seconds 必须在 0~86400（0 使用默认 TTL）")
 	}
 
 	return render.GridComposeOptions{

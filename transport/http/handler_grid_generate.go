@@ -17,8 +17,7 @@ func (r *Router) handleGridGenerate(c *gin.Context) {
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	var req core.GridImageGenerateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondErr(c, http.StatusBadRequest, CodeBadRequest, "请求 JSON 无效: "+err.Error())
+	if !bindJSONBody(c, &req) {
 		return
 	}
 

@@ -61,7 +61,7 @@ curl "http://localhost:8080/challenge"
     "expires_at": "2026-08-01T12:02:00Z",
     "grid": {
       "images": [
-        {"image_id": "animals:cat_01", "asset_key": "a1b2c3d4"}
+        {"image_id": "e3b0c44298fc1c14", "asset_key": "a1b2c3d4"}
       ]
     },
     "token": "<signed-token>"
@@ -73,15 +73,18 @@ curl "http://localhost:8080/challenge"
 
 `expires_at` 是会话过期时间（RFC3339），客户端可据此做倒计时或自动刷新。
 
+> `grid.images[].image_id` 是本次会话内的不透明随机令牌（16 位十六进制，每次请求重新生成），不代表源文件名与素材包结构；客户端原样回传给 `/verify` 即可，不要猜测或构造。管理端点 `/grid/generate` 才返回真实 ID。
+> `token` 仅当配置 `CAPTCHA_TOKEN_ENABLED=true`（启用 Token 签名与绑定）时返回，默认关闭时该字段不出现。
+
 ## POST /verify
 
 提交答案校验。**无论答对答错都返回 HTTP 200**，客户端读 `data.solved` 判断，不要靠 HTTP 状态码。只有请求级失败（会话过期、限流、绑定校验不过等）才返回 4xx。
 
-请求体：`session_id`、`token` 以及 `grid` 或 `click` 对象。`grid` 提交 `image_ids` 数组，`click` 提交 `points` 数组（含 `x`、`y`）。挑战类型由服务端按 session 判定，请求体不需要也不读取 `type` 字段。
+请求体：`session_id`、`token` 以及 `grid` 或 `click` 对象。`grid` 提交 `image_ids` 数组，`click` 提交 `points` 数组（含 `x`、`y`）。挑战类型由服务端按 session 判定，请求体不需要也不读取 `type` 字段。请求体上限 1MB，超出返回 413 `PAYLOAD_TOO_LARGE`。
 
 ```bash
 curl -X POST "http://localhost:8080/verify" -H "Content-Type: application/json" \
-  -d '{"session_id":"...","token":"<signed-token>","grid":{"image_ids":["animals:cat_01"]}}'
+  -d '{"session_id":"...","token":"<signed-token>","grid":{"image_ids":["e3b0c44298fc1c14"]}}'
 ```
 
 答对：
@@ -196,6 +199,7 @@ curl "http://localhost:8080/asset/a1b2c3d4" --output image.webp
 ```
 
 > 该接口返回答案元数据，适合编辑器/内部工具。暴露给最终验证码客户端时应在网关或鉴权层限制访问。
+> 注意：此处的 `image_id` / `correct_image_ids` 是真实的 `PackID:文件名`（供编辑器引用素材），与 `/challenge` 的不透明令牌不同。请求体上限 1MB，超出返回 413 `PAYLOAD_TOO_LARGE`。
 
 ## GET /metrics
 
@@ -247,7 +251,7 @@ curl -X POST "http://localhost:8080/healthz"
 | `NOT_FOUND` | 404 | 资源不存在（含未知路由） |
 | `METHOD_NOT_ALLOWED` | 405 | 不支持的请求方法 |
 | `RATE_LIMITED` | 429 | 触发限流 |
-| `PAYLOAD_TOO_LARGE` | 413 | 请求体超限 |
+| `PAYLOAD_TOO_LARGE` | 413 | 请求体超限（上限 1MB） |
 | `INTERNAL` | 500 | 内部错误（不回显细节） |
 | `SERVICE_UNINITIALIZED` | 500 | 服务组件未初始化 |
 

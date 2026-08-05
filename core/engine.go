@@ -3,6 +3,7 @@ package core
 import (
 	crand "crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -51,6 +52,10 @@ const (
 	ChallengeRandom ChallengeType = "random"
 )
 
+// ErrUnknownChallengeType 是 /challenge 传入未知 type 参数时的错误，
+// 也是该接口唯一真正的客户端参数错误（其余都是服务端状态问题）。
+var ErrUnknownChallengeType = errors.New("未知挑战类型")
+
 type ChallengeInternal struct {
 	Type     ChallengeType           `json:"type"`
 	Question string                  `json:"question"`
@@ -96,7 +101,7 @@ func (e *Engine) GenerateChallenge(kind ChallengeType, diff Difficulty) (*Challe
 	if kind == ChallengeClick {
 		return e.GenerateClickChallenge(diff)
 	}
-	return nil, fmt.Errorf("未知挑战类型: %s", kind)
+	return nil, fmt.Errorf("%w: %s", ErrUnknownChallengeType, kind)
 }
 
 // --- Grid ---

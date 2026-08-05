@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"moetcha/core"
@@ -22,10 +23,34 @@ func classifyGridError(err error) (status int, code, message string) {
 	if errors.Is(err, ErrUnauthorized) {
 		return http.StatusUnauthorized, CodeUnauthorized, "API Token 无效"
 	}
+	if errors.Is(err, core.ErrServiceUninitialized) {
+		return http.StatusInternalServerError, CodeServiceUninitialized, "服务组件未初始化"
+	}
 	if core.IsGridImageRequestError(err) {
 		return http.StatusBadRequest, CodeBadRequest, err.Error()
 	}
 	return http.StatusInternalServerError, CodeInternal, "内部错误"
+}
+
+// classifyBindError 把 JSON 绑定错误映射为错误信封参数。
+// 请求体超过 MaxBytesReader 上限时归 413 PAYLOAD_TOO_LARGE（文档错误码表），
+// 其余解析错误归 400 BAD_REQUEST。
+func classifyBindError(err error) (int, string, string) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) || strings.Contains(err.Error(), "request body too large") {
+		return http.StatusRequestEntityTooLarge, CodePayloadTooLarge, "请求体超限"
+	}
+	return http.StatusBadRequest, CodeBadRequest, "请求 JSON 无效: " + err.Error()
+}
+
+// bindJSONBody 绑定 JSON 请求体；失败时已写入错误信封并返回 false。
+func bindJSONBody(c *gin.Context, dst any) bool {
+	if err := c.ShouldBindJSON(dst); err != nil {
+		status, code, msg := classifyBindError(err)
+		respondErr(c, status, code, msg)
+		return false
+	}
+	return true
 }
 
 // logInternalError 记录 5xx 级错误，附 request_id 便于排查。
