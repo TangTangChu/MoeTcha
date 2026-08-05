@@ -264,7 +264,7 @@ func TestAutoLabelScale(t *testing.T) {
 	}{
 		{0, 3},       // 退化默认
 		{16, 3},      // 最小 tile 仍用下限 3
-		{160, 3},     // 历史 160px 默认 -> 3（保持观感）
+		{160, 3},     // 160px 默认 -> 3（保持观感）
 		{320, 6},     // 2x -> 6
 		{600, 11},    // 大 tile -> 11，编号随 tile 变大
 		{1200, 22},   // 更大 -> 22
@@ -281,7 +281,6 @@ func TestAutoLabelScale(t *testing.T) {
 func TestGridImageLabelScaleAutoFromTileSize(t *testing.T) {
 	idx, _ := buildGridImageTestIndexer(t)
 	engine := NewEngine(idx)
-	// 不传 label_scale（0=自动）：大 tile 应自动放大编号，不再恒为 3。
 	plan, err := engine.buildGridImagePlan(GridImageGenerateRequest{
 		Tag:          "猫",
 		ImageCount:   4,

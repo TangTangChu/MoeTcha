@@ -5,7 +5,10 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     volumes:
-      - ./data/packs:/app/data/packs:ro
+      - ./data:/app/data
     environment:
       - GIN_MODE=release
+    restart: unless-stopped

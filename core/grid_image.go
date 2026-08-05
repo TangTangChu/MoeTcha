@@ -813,7 +813,7 @@ func formatGridColor(value color.RGBA) string {
 }
 
 // autoLabelScale 按 tile 短边推导编号缩放系数：让数字高度约占 tile 短边的 13%
-// （与 160px 默认 tile + label_scale=3 的历史观感一致），随 tile 变大自动放大。
+// （与 160px 默认 tile + label_scale=3 的观感一致），随 tile 变大自动放大。
 // 数字字形为 5×7 位图，每单位 scale 令字形高度为 7*scale。
 func autoLabelScale(tileMin int) int {
 	if tileMin <= 0 {

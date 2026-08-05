@@ -31,7 +31,7 @@ func (s EnvSource) String() string {
 
 // Resolver 按 命令行 > 环境变量 > .env 文件 > 默认值 的优先级查找配置值。
 //
-// 真实环境变量压过 .env 文件是刻意的：本仓库 Dockerfile 用 COPY . .，
+// 真实环境变量优先于 .env 文件：本仓库 Dockerfile 用 COPY . .,
 // 若文件优先，镜像里烤进去的开发用 .env 会静默覆盖 docker run -e 传入的生产密钥。
 type Resolver struct {
 	DotEnv map[string]string
@@ -42,7 +42,7 @@ type Resolver struct {
 }
 
 // lookup 返回去除首尾空白后的值。
-// 空值等同于未设置——保留改造前 getEnv 的语义，使 HTTP_PORT= 仍回落默认值。
+// 空值等同于未设置：HTTP_PORT= 仍回落默认值。
 func (r *Resolver) lookup(key string) (string, EnvSource, bool) {
 	if v, ok := r.Flags[key]; ok {
 		if v = strings.TrimSpace(v); v != "" {

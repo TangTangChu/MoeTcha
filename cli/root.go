@@ -32,6 +32,7 @@ const usageText = `MoeTcha —— 验证码服务
 serve 选项：
   --env-file <路径>   指定 .env 文件（默认 .env，不存在则忽略）
   --port <端口>       覆盖 HTTP_PORT
+  --host <地址>       覆盖 HTTP_HOST
   --log-level <级别>  覆盖 LOG_LEVEL（debug/info/warn/error）
   --console <模式>    运行期控制台：auto（stdin 为终端时启用）/ on / off
   --set KEY=VALUE     覆盖任意配置项，可重复
@@ -81,7 +82,7 @@ func Run(args []string) int {
 		fmt.Print(usageText)
 		return 0
 	default:
-		// 裸跑带选项（如 moetcha --port 9000）仍按 serve 处理，保持向后兼容。
+		// 裸跑带选项（如 moetcha --port 9000）仍按 serve 处理。
 		if strings.HasPrefix(cmd, "-") {
 			return runServe(args[1:])
 		}

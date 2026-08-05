@@ -35,7 +35,7 @@ func TestVerifyGrid(t *testing.T) {
 			name:    "数量不足",
 			req:     GridVerifyRequest{ImageIDs: []string{"a:cat1"}},
 			wantOK:  false,
-			wantCor: 1, // 仅为文档意图，失败时不再回填，断言见下方
+			wantCor: 1, // 仅文档意图；失败时不回填 correct/total，断言见下方
 			wantTot: 2,
 		},
 		{

@@ -81,7 +81,6 @@ func TestParseTrustedNetworks(t *testing.T) {
 	}
 }
 
-// TestVerifyTrustedSkipsUAMatch 回归：可信网络的请求即使 UA 与签发时不一致也放行。
 func TestVerifyTrustedSkipsUAMatch(t *testing.T) {
 	store := NewMemorySessionStore()
 	nets, _ := ParseTrustedNetworks([]string{"10.0.0.0/8"})
@@ -118,7 +117,6 @@ func TestVerifyTrustedSkipsUAMatch(t *testing.T) {
 	}
 }
 
-// TestVerifyUntrustedEnforcesUAMatch 回归：非可信网络仍受 UA 一致性约束。
 func TestVerifyUntrustedEnforcesUAMatch(t *testing.T) {
 	store := NewMemorySessionStore()
 	svc := &Service{

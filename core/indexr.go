@@ -33,8 +33,8 @@ func NewIndexer(provider PackProvider) (*Indexer, error) {
 	return BuildIndexer(packs)
 }
 
-// BuildIndexer 从已加载的 packs 构建索引。与 NewIndexer 的区别是不再重新读取
-// 磁盘——serve 启动与控制台 reload 都先 LoadPacks 再 BuildIndexer，避免同一批
+// BuildIndexer 从已加载的 packs 构建索引，不重新读盘（区别于 NewIndexer）。
+// serve 启动与控制台 reload 都先 LoadPacks 再 BuildIndexer，避免同一批
 // 素材被扫描两遍（DirectoryProvider 每次调用都会重新读盘）。
 func BuildIndexer(packs []Pack) (*Indexer, error) {
 	idx := &Indexer{

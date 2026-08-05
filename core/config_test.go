@@ -182,8 +182,6 @@ func stubLookup(m map[string]string) func(string) (string, bool) {
 	}
 }
 
-// 改造前 mustInt/mustDuration 等把解析错误静默吞掉并回落默认值，
-// 运维改一个配置项要重启一次才能发现下一个错。现在必须一次性全报出来。
 func TestLoadCollectsAllErrors(t *testing.T) {
 	cfg, _, err := Load(LoadOptions{Lookup: stubLookup(map[string]string{
 		"CAPTCHA_TTL":            "2min",
@@ -297,7 +295,6 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 }
 
-// 保留改造前 getEnv 的语义：空值等同于未设置，回落默认值。
 func TestLoadEmptyValueFallsBackToDefault(t *testing.T) {
 	cfg, _, err := Load(LoadOptions{Lookup: stubLookup(map[string]string{
 		"HTTP_PORT":       "",
@@ -338,7 +335,6 @@ func TestLoadMasksSecretsInResolvedValues(t *testing.T) {
 	t.Fatal("未找到 CAPTCHA_TOKEN_SIGNING_KEY")
 }
 
-// LOG_LEVEL 改造前是空配置：写在 .env.example 里但没有任何代码读取。
 func TestLogLevelIsWired(t *testing.T) {
 	cfg, _, err := Load(LoadOptions{Lookup: stubLookup(nil)})
 	if err != nil {

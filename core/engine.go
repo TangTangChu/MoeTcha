@@ -137,7 +137,7 @@ func (e *Engine) GenerateGridChallenge(diff Difficulty) (*ChallengeInternal, err
 
 	// 干扰图不足时，尝试增加正确图片数量补齐到 cfg.Size（在 correctMax 与候选数允许范围内）。
 	// 注意方向：干扰不足时应 *增加* correctCount（让正确图填空），而不是减少——
-	// 减少 correctCount 会让 distGoal 更大、缺口更深，反而得到更小的网格（历史上的 bug）。
+	// 减少 correctCount 会让 distGoal 更大、缺口更深，得到更小的网格。
 	correctLo := cfg.CorrectMin
 	if correctLo <= 0 {
 		correctLo = 1

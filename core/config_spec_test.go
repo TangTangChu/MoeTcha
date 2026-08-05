@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// TestDotEnvExampleMatchesRegistry 是防漂移的护栏。
-//
-// 改造前 .env.example 与代码已经双向脱节：LOG_LEVEL 写了但没人读，
-// CAPTCHA_DIFFICULTY 会导致启动失败却根本没写进文档。
-// 现在 .env.example 由注册表生成，这个测试保证它不会再被手工改歪。
 func TestDotEnvExampleMatchesRegistry(t *testing.T) {
 	path := filepath.Join("..", ".env.example")
 	f, err := os.Open(path)
